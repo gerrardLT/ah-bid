@@ -1,0 +1,25 @@
+node_modules/
+*.log
+.cache/
+output/
+
+# ---- data/ 下只放源文件与校验脚本入库，数据资产一律排除 ----
+# 附件 26.96 GB / 主库 276 MB / 私有清单，任何一个都不该进 git 历史
+data/attachments/
+data/bid-info/
+data/atlas/
+data/index.db
+data/index.db-shm
+data/index.db-wal
+data/*.csv
+data/*.bin
+data/*.pdf
+data/*.png
+data/*.txt
+data/*.out
+data/*.err
+data/*.run
+data/*-samples.json
+data/*-recall.md
+data/_*.ts
+data/__pycache__/

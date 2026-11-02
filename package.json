@@ -1,0 +1,20 @@
+{
+  "name": "ah-bid",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "安徽省公共资源交易招标信息本地索引与检索工具",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "poc": "node --no-warnings src/poc.ts",
+    "crawl:probe": "node --no-warnings src/crawl.ts --probe",
+    "crawl:notice": "node --no-warnings src/crawl.ts --natures=1",
+    "crawl:award": "node --no-warnings src/crawl.ts --natures=2,3",
+    "reclassify": "node --no-warnings src/poc.ts --reclassify",
+    "verify:power": "node --no-warnings src/verify.ts --pages=10 --max=12 --out=data/power-recall.md --samples=data/power-samples.json",
+    "verify:core": "node --no-warnings src/verify.ts --probes=光伏,储能,分布式光伏 --pages=10 --max=12 --out=data/core-recall.md --samples=data/core-samples.json",
+    "verify:building": "node --no-warnings src/verify.ts --probes=教学楼,综合楼,办公楼,装饰装修,老旧小区改造,安置房,厂房,房屋建筑 --pages=10 --max=12 --out=data/building-recall.md --samples=data/building-samples.json"
+  }
+}

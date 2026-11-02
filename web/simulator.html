@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>投标决策模拟器</title>
+<style>
+:root{
+  --paper:#F2F0EB; --card:#FFF; --ink:#0A0A09; --ink-2:#3A352F;
+  --ink-3:#726B62; --ink-4:#A8A19A; --line:#DAD6CD; --line-2:#EDEAE3;
+  --ok:#1F6B3C; --ok-bg:#E9F2EC; --part:#9A6B12; --part-bg:#FBF2DF;
+  --miss:#B32D12; --miss-bg:#FBEAE6; --data:#1B4A8A;
+  --f:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  --m:"SF Mono","JetBrains Mono",Consolas,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--paper);color:var(--ink);font-family:var(--f);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased;overflow:hidden}
+button,input,select{font-family:inherit;font-size:inherit;color:inherit}
+button{cursor:pointer;border:none;background:none}
+
+.app{display:flex;flex-direction:column;height:100vh}
+
+/* 页头 */
+header{background:var(--ink);color:#fff;padding:13px 24px;display:flex;align-items:baseline;gap:16px;flex-shrink:0}
+header h1{font-size:17px;font-weight:750;letter-spacing:-.02em}
+header .sub{font-size:11.5px;color:rgba(255,255,255,.45);font-family:var(--m)}
+header .rt{margin-left:auto;font-family:var(--m);font-size:10.5px;color:rgba(255,255,255,.4)}
+
+.body{flex:1;display:grid;grid-template-columns:340px 1fr;overflow:hidden;min-height:0}
+
+/* ============ 左：参数 ============ */
+aside{background:var(--card);border-right:1px solid var(--line);overflow-y:auto;padding-bottom:24px}
+aside::-webkit-scrollbar{width:6px}
+aside::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+
+.ph{padding:14px 18px 10px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);font-weight:700;border-bottom:1px solid var(--line-2)}
+
+.field{padding:13px 18px;border-bottom:1px solid var(--line-2)}
+.field label{display:block;font-size:12.5px;font-weight:600;color:var(--ink-2);margin-bottom:7px}
+.field .hint{font-size:10.5px;color:var(--ink-4);margin-top:5px;line-height:1.45;font-family:var(--m)}
+
+.inp{width:100%;height:34px;padding:0 10px;border:1px solid var(--line);background:#FBFAF8;border-radius:4px;outline:none;font-family:var(--m);font-size:14px;font-weight:600;transition:.15s}
+.inp:focus{border-color:var(--ink);background:#fff;box-shadow:0 0 0 3px rgba(10,10,9,.07)}
+
+select.inp{font-family:var(--f);font-size:13.5px;font-weight:500;cursor:pointer}
+
+.rng{width:100%;-webkit-appearance:none;height:4px;background:var(--line-2);border-radius:2px;outline:none;margin:6px 0}
+.rng::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--ink);cursor:pointer;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.25)}
+.rng-val{display:flex;justify-content:space-between;font-family:var(--m);font-size:10.5px;color:var(--ink-3);margin-top:2px}
+.rng-val b{color:var(--ink);font-size:13px;font-weight:700}
+
+/* 策略按钮组 */
+.seg{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+.seg button{padding:8px 4px;border:1px solid var(--line);border-radius:4px;font-size:12px;font-weight:600;color:var(--ink-3);transition:.13s;text-align:center}
+.seg button:hover{border-color:var(--ink-3);color:var(--ink-2)}
+.seg button.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.seg button .d{display:block;font-family:var(--m);font-size:9.5px;font-weight:400;opacity:.65;margin-top:1px}
+
+/* ============ 右：输出 ============ */
+main{overflow-y:auto;padding:20px 24px 40px}
+main::-webkit-scrollbar{width:10px}
+main::-webkit-scrollbar-thumb{background:#D5CFC4;border-radius:5px;border:3px solid var(--paper)}
+
+/* 主结果 */
+.hero-out{display:grid;grid-template-columns:1.15fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);margin-bottom:18px}
+.ho{background:var(--card);padding:20px 22px}
+.ho .lab{font-family:var(--m);font-size:10px;letter-spacing:.1em;color:var(--ink-3);margin-bottom:8px}
+.ho .big{font-family:var(--m);font-size:40px;font-weight:700;letter-spacing:-.03em;line-height:1;font-variant-numeric:tabular-nums}
+.ho .big .u{font-size:16px;font-weight:500;color:var(--ink-3);margin-left:4px}
+.ho .rate{font-family:var(--m);font-size:15px;font-weight:600;color:var(--miss);margin-top:8px}
+.ho .range{font-family:var(--m);font-size:11.5px;color:var(--ink-3);margin-top:4px}
+.ho .conf{margin-top:12px;display:flex;align-items:center;gap:8px}
+.ho .conf .bar{flex:1;height:5px;background:var(--line-2);position:relative;overflow:hidden;border-radius:3px}
+.ho .conf .bar i{position:absolute;left:0;top:0;bottom:0}
+.ho .conf .t{font-family:var(--m);font-size:10.5px;font-weight:600}
+
+/* 判断卡片 */
+.card{background:var(--card);border:1px solid var(--line);margin-bottom:14px}
+.card .ch{padding:11px 16px;background:var(--ink);color:#fff;display:flex;align-items:center;gap:10px}
+.card .ch .t{font-size:13.5px;font-weight:700}
+.card .ch .n{font-family:var(--m);font-size:10px;color:rgba(255,255,255,.45);margin-left:auto}
+.card .cb{padding:14px 16px}
+
+/* 归因条 */
+.attr{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line-2)}
+.attr:last-child{border-bottom:none}
+.attr .k{font-size:12.5px;font-weight:600;color:var(--ink-2);min-width:96px}
+.attr .bar{flex:1;height:18px;background:var(--line-2);position:relative;overflow:hidden}
+.attr .bar i{position:absolute;top:0;bottom:0;display:block}
+.attr .bar .txt{position:absolute;right:5px;top:0;line-height:18px;font-family:var(--m);font-size:10px;color:rgba(255,255,255,.9);z-index:1}
+.attr .v{font-family:var(--m);font-size:12.5px;font-weight:700;min-width:56px;text-align:right}
+.attr .src{font-family:var(--m);font-size:9.5px;color:var(--ink-4);min-width:86px;text-align:right}
+
+/* 判断列表 */
+.judge{display:flex;gap:11px;padding:10px 0;border-bottom:1px solid var(--line-2)}
+.judge:last-child{border-bottom:none}
+.judge .n{font-family:var(--m);font-size:11px;font-weight:700;color:var(--miss);flex-shrink:0;width:18px;padding-top:1px}
+.judge .c{font-size:12.5px;line-height:1.65;color:var(--ink-2)}
+.judge .c b{color:var(--ink);font-weight:700}
+.judge .c .tag{display:inline-block;font-family:var(--m);font-size:9px;padding:0 4px;border-radius:2px;margin-left:4px;vertical-align:1px}
+.tag.obs{background:var(--ok-bg);color:var(--ok)}
+.tag.inf{background:var(--part-bg);color:var(--part)}
+.tag.un{background:var(--miss-bg);color:var(--miss)}
+
+/* 评分构成 */
+.score-bar{display:flex;height:34px;border:1px solid var(--line);overflow:hidden;margin-bottom:10px}
+.score-bar .seg{display:flex;align-items:center;justify-content:center;font-family:var(--m);font-size:11px;font-weight:700;color:#fff;flex-direction:column;line-height:1.15}
+.score-bar .seg small{font-size:8.5px;font-weight:400;opacity:.75}
+.sb-t,.sb-c,.sb-p{transition:.2s}
+.sb-t{background:var(--data)}
+.sb-c{background:#5A6B8C}
+.sb-p{background:var(--miss)}
+.sb-n{background:var(--ink-4)}
+
+/* 风险 */
+.risk{display:flex;gap:9px;padding:8px 0;font-size:12px;line-height:1.6;color:var(--ink-2);border-bottom:1px solid var(--line-2)}
+.risk:last-child{border-bottom:none}
+.risk .i{color:var(--miss);font-family:var(--m);font-weight:700;flex-shrink:0}
+.risk .i.ok{color:var(--ok)}
+
+/* 敏感度 */
+.sens{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line)}
+.sens .s{background:var(--card);padding:11px 13px}
+.sens .s .l{font-size:11.5px;color:var(--ink-3);margin-bottom:5px}
+.sens .s .v{font-family:var(--m);font-size:17px;font-weight:700}
+.sens .s .d{font-family:var(--m);font-size:10px;color:var(--ink-4);margin-top:3px}
+
+@media (max-width:1100px){
+  .body{grid-template-columns:1fr}
+  aside{display:none}
+  .hero-out{grid-template-columns:1fr}
+  .sens{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header>
+    <h1>投标决策模拟器</h1>
+    <span class="sub">调整左侧参数，右侧实时推演</span>
+    <span class="rt" id="rt">样本加载中…</span>
+  </header>
+
+  <div class="body">
+    <!-- ============ 左：参数 ============ -->
+    <aside>
+      <div class="ph">项目条件</div>
+
+      <div class="field">
+        <label>控制价（万元）</label>
+        <input class="inp" id="ctrl" type="number" value="4000" min="50" max="100000" step="50">
+        <div class="hint" id="ctrlTier">—</div>
+      </div>
+
+      <div class="field">
+        <label>项目类型</label>
+        <select class="inp" id="type">
+          <option value="房建">房建</option>
+          <option value="市政">市政</option>
+          <option value="电力">电力</option>
+          <option value="光伏">光伏</option>
+          <option value="智能化">智能化</option>
+          <option value="园林">园林</option>
+          <option value="监理设计">监理设计</option>
+          <option value="水利">水利</option>
+          <option value="其他">其他</option>
+        </select>
+        <div class="hint" id="typeHint">—</div>
+      </div>
+
+      <div class="field">
+        <label>评标办法 <span style="font-size:10px;color:var(--ok);font-family:var(--m)">★ 最强解释变量</span></label>
+        <select class="inp" id="method">
+          <option value="">（未说明 / 按其他维度）</option>
+          <option value="综合评估法">综合评估法</option>
+          <option value="低价法">低价法（经评审最低价）</option>
+          <option value="合理价格法">合理价格法</option>
+          <option value="定性定量法">定性定量法</option>
+        </select>
+        <div class="hint" id="methodHint">—</div>
+      </div>
+
+      <div class="field">
+        <label>招标人 <span style="font-size:10px;color:var(--ok);font-family:var(--m)">★ 最小解释单元</span></label>
+        <select class="inp" id="buyer">
+          <option value="">（未知 / 按其他维度）</option>
+        </select>
+        <div class="hint" id="buyerHint">—</div>
+      </div>
+
+      <div class="field">
+        <label>代理机构 <span style="font-size:10px;color:var(--ok);font-family:var(--m)">★ 覆盖 80%</span></label>
+        <select class="inp" id="agency">
+          <option value="">（未知 / 按其他维度）</option>
+        </select>
+        <div class="hint" id="agencyHint">—</div>
+      </div>
+
+      <div class="field">
+        <label>价格口径 <span style="font-size:10px;color:var(--miss);font-family:var(--m)">★ 影响 ±9 点</span></label>
+        <select class="inp" id="caliber">
+          <option value="mixed">不确定（用混合样本）</option>
+          <option value="limit">最高投标限价（真预算上限）</option>
+          <option value="estimate">合同估算价（粗略投资额）</option>
+        </select>
+        <div class="hint" id="caliberHint">—</div>
+      </div>
+
+      <div class="field">
+        <label>所在城市 <span style="font-size:10px;color:var(--ink-4);font-family:var(--m)">（选城市自动推口径）</span></label>
+        <select class="inp" id="city">
+          <option value="">（不限 / 未知）</option>
+          <option value="芜湖市">芜湖市</option>
+          <option value="宣城市">宣城市</option>
+          <option value="黄山市">黄山市</option>
+          <option value="铜陵市">铜陵市</option>
+          <option value="宿州市">宿州市</option>
+          <option value="合肥市">合肥市</option>
+          <option value="阜阳市">阜阳市</option>
+          <option value="蚌埠市">蚌埠市</option>
+          <option value="安庆市">安庆市</option>
+          <option value="滁州市">滁州市</option>
+          <option value="六安市">六安市</option>
+          <option value="马鞍山市">马鞍山市</option>
+        </select>
+        <div class="hint" id="cityHint">—</div>
+      </div>
+
+      <div class="ph">招标要求</div>
+
+      <div class="field">
+        <label>要求工期 <span id="daysVal" style="font-family:var(--m);color:var(--ink)">300</span> 天</label>
+        <input class="rng" id="days" type="range" min="30" max="900" step="10" value="300">
+        <div class="rng-val"><span>30 天</span><span id="daysCmp">—</span><span>900 天</span></div>
+      </div>
+
+      <div class="field">
+        <label>预计投标人数 <span id="bdVal" style="font-family:var(--m);color:var(--ink)">8</span> 家</label>
+        <input class="rng" id="bidders" type="range" min="1" max="50" step="1" value="8">
+        <div class="rng-val"><span>1 家</span><span style="color:var(--part)">⚠ 无实测数据</span><span>50 家</span></div>
+      </div>
+
+      <div class="field">
+        <label>报价权重 <span id="pwVal" style="font-family:var(--m);color:var(--ink)">60</span> 分</label>
+        <input class="rng" id="pweight" type="range" min="0" max="90" step="5" value="60">
+        <div class="rng-val"><span>0</span><span id="pwSrc">按类型默认</span><span>90</span></div>
+      </div>
+
+      <div class="ph">自身策略</div>
+
+      <div class="field">
+        <div class="seg" id="strat">
+          <button data-s="aggr">激进<div class="d">-5 点</div></button>
+          <button data-s="norm" class="on">稳健<div class="d">居中</div></button>
+          <button data-s="cons">保守<div class="d">+5 点</div></button>
+        </div>
+        <div class="hint">激进=报更低，中标率↑利润↓；保守=报更高，利润↑中标率↓</div>
+      </div>
+    </aside>
+
+    <!-- ============ 右：输出 ============ -->
+    <main>
+      <div class="hero-out">
+        <div class="ho">
+          <div class="lab">建议报价</div>
+          <div class="big" id="outPrice">—<span class="u">万</span></div>
+          <div class="rate" id="outRate">—</div>
+          <div class="range" id="outRange">—</div>
+          <div class="conf">
+            <span class="t" id="confT">—</span>
+            <div class="bar"><i id="confBar" style="width:0"></i></div>
+            <span style="font-family:var(--m);font-size:10px;color:var(--ink-3)" id="confN"></span>
+          </div>
+        </div>
+        <div class="ho">
+          <div class="lab">推演依据（下浮率归因）</div>
+          <div id="attr"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="ch"><span class="t">判断</span><span class="n" id="judgeN"></span></div>
+        <div class="cb" id="judge"></div>
+      </div>
+
+      <div class="card">
+        <div class="ch"><span class="t">评分构成 · 该写什么</span><span class="n" id="scoreN"></span></div>
+        <div class="cb">
+          <div class="score-bar" id="scoreBar"></div>
+          <div style="font-size:12.5px;color:var(--ink-2);line-height:1.7" id="scoreNote"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="ch"><span class="t">敏感度 · 参数动一点会怎样</span></div>
+        <div class="cb" style="padding:0">
+          <div class="sens" id="sens"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="ch"><span class="t">风险与局限</span></div>
+        <div class="cb" id="risk"></div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   数据与模型
+   ============================================================ */
+let D = null;
+const $ = id => document.getElementById(id);
+const fmt = n => (n == null ? '—' : n.toLocaleString('zh-CN', { maximumFractionDigits: 0 }));
+
+const TIERS = [[0,500,'<500万'],[500,1000,'500-1000万'],[1000,3000,'1000-3000万'],
+               [3000,5000,'3000-5000万'],[5000,10000,'5000万-1亿'],
+               [10000,30000,'1-3亿'],[30000,1e9,'>3亿']];
+const tierOf = w => (TIERS.find(t => w >= t[0] && w < t[1]) || TIERS[6])[2];
+
+/* 全省下浮率基准中位数（用于城市修正的参照） */
+const GLOBAL_MED = 17.5;
+
+/* 投标人数弹性：✅ 已实测，r = -0.006，无相关性 → 系数为 0 */
+let BIDDER_R = null;
+function bidderAdj(b){
+  if (BIDDER_R === null) return 0;
+  return 0;   // 实测证明无关，不再当作修正项
+}
+/* 报价离散度（实测）：人数越多的项目不一定分歧越大 */
+let SPREAD_MED = 8.1, POS_MED = null, BIDDER_N = 0;
+/* 评标办法实测系数（★ 最强解释变量） */
+let METHOD = null, METHOD_GLOBAL = null;
+/* 招标人画像（★ 最小解释单元） */
+let BUYER = null, WITHIN_RATIO = null;
+/* 价格口径分层（★ 影响 ±9 点） */
+let CAL = null, CITY_HINT = null;
+/* 报价权重弹性：⚠ 推断，非实测 */
+function weightAdj(pw){ return (pw - 60) / 10 * 1.8; }
+/* 工期弹性：⚠ 推断，非实测（工期宽松→成本低→可让利更多） */
+function daysAdj(days, medDays){
+  if (!medDays) return 0;
+  const r = days / medDays - 1;
+  return Math.max(-6, Math.min(6, r * 8));
+}
+/* 策略 */
+const STRAT = { aggr: 5, norm: 0, cons: -5 };
+
+/* 代理机构画像（★ 覆盖 80%，第二强变量） */
+let AGENCY = null;
+
+/* 招标人画像分级（网格搜索后：sd<15，MAE 6.48% / ±3点 39.2% / 覆盖 80%）
+   n≥3 且 波动<3 = 高；n≥4 且 波动<10 = 较高；n≥2 且 波动<15 = 中；其余 = 低 */
+function buyerTier(bk){
+  if (!bk) return null;
+  if (bk.n >= 3 && bk.sd < 3) return { lv:'高', conf:4, useMedian:true };
+  if (bk.n >= 4 && bk.sd < 10) return { lv:'较高', conf:3, useMedian:true };
+  if (bk.n >= 2 && bk.sd < 15) return { lv:'中', conf:2, useMedian:true };
+  return { lv:'低', conf:1, useMedian:false };
+}
+/* 代理机构分级（回测：sd<15 最优） */
+function agencyTier(ag){
+  if (!ag) return null;
+  if (ag.n >= 4 && ag.sd < 6) return { lv:'高', conf:4, useMedian:true };
+  if (ag.n >= 4 && ag.sd < 10) return { lv:'较高', conf:3, useMedian:true };
+  if (ag.n >= 2 && ag.sd < 15) return { lv:'中', conf:2, useMedian:true };
+  return { lv:'低', conf:1, useMedian:false };
+}
+
+/* ============================================================
+   预测
+   ============================================================ */
+function predict(){
+  const ctrl = +$('ctrl').value || 4000;
+  const type = $('type').value;
+  const method = $('method').value;
+  const buyer = $('buyer').value;
+  const agency = $('agency').value;
+  const caliber = $('caliber').value;
+  const city = $('city').value;
+  const days = +$('days').value;
+  const bidders = +$('bidders').value;
+  const pw = +$('pweight').value;
+  const strat = document.querySelector('#strat .on').dataset.s;
+
+  const tier = tierOf(ctrl);
+  /* 按口径选系数表 */
+  const CT = CAL ? (caliber === 'limit' ? CAL.limit : caliber === 'estimate' ? CAL.estimate : CAL.mixed) : null;
+  const rateAll = (CT && CT.type) || D.typeRate || {};
+  const cross = D.cross || {};
+  const tierTbl = (CT && CT.tier) || D.tier || {};
+  const methodTbl = (CT && CT.method) || METHOD || {};
+
+  /* ① 基础值：招标人 > 代理 > 评标办法 > 类型 > 档位
+     注：回测（1618 条）双画像 MAE 6.48% / ±3点 39.2% / 覆盖 80% */
+  let base = null, baseN = 0, baseSrc = '', baseLv = 0;
+  const bk = buyer && BUYER && BUYER.find(x => x.name === buyer);
+  const ag = agency && AGENCY && AGENCY.find(x => x.name === agency);
+  const mk = method && methodTbl[method];
+  const bkT = buyerTier(bk);
+  const agT = agencyTier(ag);
+  if (bk && bkT && bkT.useMedian) {
+    base = bk.med; baseN = bk.n; baseSrc = `招标人「${buyer.slice(0,14)}」`; baseLv = bkT.conf;
+  } else if (ag && agT && agT.useMedian) {
+    base = ag.med; baseN = ag.n; baseSrc = `代理「${agency.slice(0,14)}」`; baseLv = agT.conf;
+  } else if (mk && mk.n >= 5) {
+    base = mk.med; baseN = mk.n; baseSrc = `评标办法「${method}」`; baseLv = 4;
+  } else if (rateAll[type] && rateAll[type].n >= 10) {
+    base = rateAll[type].med; baseN = rateAll[type].n; baseSrc = `同类型 ${type}`; baseLv = 3;
+  } else if (tierTbl[tier]) {
+    base = tierTbl[tier].med; baseN = tierTbl[tier].n; baseSrc = `同档位 ${tier}`; baseLv = 2;
+  } else {
+    base = GLOBAL_MED; baseN = 0; baseSrc = '全局均值兜底'; baseLv = 1;
+  }
+  const p25 = (tierTbl[tier] && tierTbl[tier].p25) || base - 5;
+  const p75 = (tierTbl[tier] && tierTbl[tier].p75) || base + 8;
+
+  /* ② 修正项（城市表也按口径切换） */
+  const GLOBAL_REF = (CT && CT.global) || (D && D.global_med) || GLOBAL_MED;
+  const cityTbl = (CT && CT.city) || (D && D.cityRate) || {};
+  let cityAdj = 0, cityN = 0, citySrc = '未指定';
+  if (city && cityTbl[city]) {
+    cityAdj = cityTbl[city].med - GLOBAL_REF;
+    cityN = cityTbl[city].n;
+    citySrc = `${city} n=${cityN}`;
+  } else if (city) {
+    citySrc = '当前口径无该城市样本';
+  }
+  const bAdj = bidderAdj(bidders);
+  const wAdj = weightAdj(pw);
+  const medDays = (D.dur && D.dur[tier] && D.dur[tier].med) || null;
+  const dAdj = daysAdj(days, medDays);
+  const sAdj = STRAT[strat];
+
+  const rate = Math.max(0.5, Math.min(45, base + cityAdj + bAdj + wAdj + dAdj + sAdj));
+  const price = ctrl * (1 - rate / 100);
+
+  /* ③ 置信度：综合样本量与招标人波动 */
+  let conf, confTxt;
+  if (bk && bkT) {
+    conf = bkT.conf;
+    confTxt = bkT.useMedian ? bkT.lv : '低（无固定风格）';
+  } else if (baseN >= 50) { conf = 4; confTxt = '较高'; }
+  else if (baseN >= 20) { conf = 3; confTxt = '中等'; }
+  else if (baseN >= 8) { conf = 2; confTxt = '偏低'; }
+  else { conf = 1; confTxt = '很低'; }
+
+  render({ ctrl, type, method, buyer, agency, caliber, city, days, bidders, pw, strat, tier, CT,
+           base, baseN, baseSrc, baseLv, p25, p75,
+           cityAdj, cityN, citySrc, bAdj, wAdj, dAdj, sAdj, medDays,
+           rate, price, conf, confTxt });
+}
+
+/* ============================================================
+   渲染
+   ============================================================ */
+function render(m){
+  /* 主输出 */
+  $('outPrice').innerHTML = `${fmt(m.price)}<span class="u">万</span>`;
+  $('outRate').textContent = `下浮 ${m.rate.toFixed(1)}%`;
+  $('outRange').textContent = `同档位实测区间 ${m.p25}% ~ ${m.p75}%`;
+  const confColor = ['var(--miss)','var(--miss)','var(--part)','var(--ok)','var(--ok)'][m.conf];
+  $('confT').textContent = `置信度 ${m.confTxt}`;
+  $('confT').style.color = confColor;
+  $('confBar').style.width = (m.conf * 25) + '%';
+  $('confBar').style.background = confColor;
+  $('confN').textContent = m.baseN ? `基准样本 n=${m.baseN}` : '无匹配样本';
+
+  /* 归因 */
+  const items = [
+    { k:'造价档位基准', v: m.base, src: m.baseSrc, lv: m.baseLv },
+    { k:'城市修正', v: m.cityAdj, src: m.cityAdj === 0 ? m.citySrc : (m.cityN ? `n=${m.cityN}` : '口径内无样本'), lv: m.cityN >= 20 ? 3 : (m.cityN >= 5 ? 2 : 0) },
+    { k:'投标人数', v: m.bAdj, src: BIDDER_R !== null ? `r=${BIDDER_R} 实测无关` : '推断', lv: BIDDER_R !== null ? 3 : 0 },
+    { k:'报价权重', v: m.wAdj, src: '推断', lv: 0 },
+    { k:'工期弹性', v: m.dAdj, src: m.medDays ? `中位 ${m.medDays}天` : '推断', lv: m.medDays ? 2 : 0 },
+    { k:'自身策略', v: m.sAdj, src: '主观', lv: 0 },
+  ];
+  const maxAbs = Math.max(...items.map(x => Math.abs(x.v)), 1);
+  $('attr').innerHTML = items.map(it => {
+    const pct = Math.abs(it.v) / maxAbs * 100;
+    const isPos = it.v >= 0;
+    const col = it.lv >= 3 ? 'var(--ok)' : it.lv === 2 ? 'var(--part)' : 'var(--ink-4)';
+    const w = it.v === 0 ? 1 : Math.max(pct, 4);
+    return `<div class="attr">
+      <span class="k">${it.k}</span>
+      <div class="bar"><i style="width:${w}%;background:${col};${isPos?'left:50%':'right:50%'};${isPos?'border-radius:0 2px 2px 0':'border-radius:2px 0 0 2px'}"></i></div>
+      <span class="v" style="color:${it.v===0?'var(--ink-4)':isPos?'var(--ok)':'var(--miss)'}">${it.v>0?'+':''}${it.v.toFixed(1)}</span>
+      <span class="src">${it.src}</span>
+    </div>`;
+  }).join('');
+
+  /* 判断 */
+  const J = [];
+  const tierData = (m.CT && m.CT.tier && m.CT.tier[m.tier]) || {};
+  const calName = m.caliber === 'limit' ? '限价' : m.caliber === 'estimate' ? '估算' : '混合';
+  J.push({
+    c: `<b>${m.tier}</b> 档在 <b>${calName}口径</b>下历史中位下浮 <b>${m.base.toFixed(1)}%</b>（n=${m.baseN || 0}），你的建议报价对应 <b>${m.rate.toFixed(1)}%</b>，${m.rate > m.base ? '比基准更狠' : '比基准更稳'}。`,
+    t: 'obs'
+  });
+  if (m.cityAdj !== 0) {
+    J.push({
+      c: `<b>${m.city}</b> 的下浮中位比全省高 <b>${m.cityAdj > 0 ? '+' : ''}${m.cityAdj.toFixed(1)}</b> 个点${m.cityAdj > 10 ? '，<b>竞争异常激烈</b>' : ''}。`,
+      t: m.cityN >= 20 ? 'obs' : 'inf'
+    });
+  }
+  if (m.medDays) {
+    const diff = ((m.days / m.medDays - 1) * 100).toFixed(0);
+    J.push({
+      c: `要求工期 <b>${m.days} 天</b>，同档位中位 <b>${m.medDays} 天</b>，${diff > 0 ? `宽松 <b>${diff}%</b>——有时间消化低价` : `紧 <b>${Math.abs(diff)}%</b>——成本会上升，下浮要保守`}。`,
+      t: 'obs'
+    });
+  }
+  if (m.buyer && BUYER) {
+    const bk = BUYER.find(x => x.name === m.buyer);
+    if (bk) {
+      const t = buyerTier(bk);
+      const verdict = bk.sd < 1 ? '<b>定价极稳定</b>——5 个项目几乎同一个数，可以按中位报。'
+        : bk.sd < 3 ? '<b>定价稳定</b>——可按中位±2 报。'
+        : bk.sd < 6 ? '波动中等——中位数只能当参考，实际要结合评标办法。'
+        : '<b>这个招标人没有固定风格</b>——两个项目能差几十个点，中位数不可用，只能看区间。';
+      J.push({
+        c: `<b>招标人画像</b>：${bk.n} 个项目，下浮中位 <b>${bk.med}%</b>，区间 <b>${bk.lo}%~${bk.hi}%</b>，波动 <b>${bk.sd}</b>。${verdict}<span class="tag ${bk.sd < 6 ? 'obs' : 'un'}">${bk.sd < 6 ? '✓ 实测' : '⚠ 波动过大'}</span>`,
+        t: bk.sd < 6 ? 'obs' : 'inf'
+      });
+    }
+  }
+  if (m.agency && AGENCY) {
+    const ag = AGENCY.find(x => x.name === m.agency);
+    if (ag) {
+      const t = agencyTier(ag);
+      J.push({
+        c: `<b>代理机构画像</b>：${ag.n} 项，下浮中位 <b>${ag.med}%</b>，区间 ${ag.lo}~${ag.hi}%，波动 <b>${ag.sd}</b>（置信 ${t.lv}）。这个代理服务过 <b>${ag.n_buyers}</b> 个招标人，${ag.ctrls ? '' : ''}主做 ${ag.type_top || '—'}（${ag.city_top || '—'}）。<span class="tag obs">✓ 实测</span>`,
+        t: 'obs'
+      });
+    }
+  }
+  if (m.method && m.CT && m.CT.method && m.CT.method[m.method]) {
+    const mk = m.CT.method[m.method];
+    J.push({
+      c: `评标办法是 <b>${m.method}</b>，<b>${m.caliber === 'limit' ? '限价' : m.caliber === 'estimate' ? '估算' : '混合'}口径</b>下下浮中位 <b>${mk.med}%</b>（n=${mk.n}）。${m.method === '综合评估法' ? '<b>反直觉：综合评估法的下浮反而最高</b>——价格分越高越好，所以大家把报价压得更狠。' : m.method === '合理价格法' ? '<b>合理价格法下浮最浅</b>——报价接近平均价反而得高分。' : m.method === '低价法' ? '<b>低价法比想象中温和</b>——有成本底线审核，报太低反而被废。' : ''}<span class="tag obs">✓ 实测</span>`,
+      t: 'obs'
+    });
+  } else if (m.method && METHOD && METHOD[m.method]) {
+    const mk = METHOD[m.method];
+    J.push({
+      c: `评标办法是 <b>${m.method}</b>，历史上这类项目的下浮中位是 <b>${mk.med}%</b>（n=${mk.n}），比全局中位 ${METHOD_GLOBAL}% ${mk.adj > 0 ? `高 <b>${mk.adj}</b>` : `低 <b>${Math.abs(mk.adj)}</b>`} 个点。<span class="tag obs">✓ 实测</span>`,
+      t: 'obs'
+    });
+  }
+  J.push({
+    c: `预计 <b>${m.bidders} 家</b>投标。${BIDDER_R !== null
+      ? `<b>但实测发现投标人数与价格无关</b>（r=${BIDDER_R}，n=${BIDDER_N}）——<b>这条链是断的，不能作为预测依据</b>。<span class="tag obs">✓ 实测</span>`
+      : '<b>修正按 0 处理</b>。<span class="tag inf">推断</span>'}`,
+    t: BIDDER_R !== null ? 'obs' : 'inf'
+  });
+  J.push({
+    c: `历史报价离散度中位 <b>${SPREAD_MED}%</b>——意味着同项目的各家报价平均相差 ${SPREAD_MED}% 左右。离散度<b>与人数无关</b>（<3% 到 >15% 均匀分布），说明分歧来自「成本判断不同」而不是「人多人少」。`,
+    t: 'obs'
+  });
+  $('judge').innerHTML = J.map((j, i) => `<div class="judge"><span class="n">${i+1}</span><span class="c">${j.c}</span></div>`).join('');
+  $('judgeN').textContent = `${J.length} 条`;
+
+  /* 评分构成 */
+  let sc = (D.score && D.score[m.type]) || { t: 20, c: 10, p: 60, n: 0 };
+  if (Math.abs(m.pw - sc.p) > 1) sc = { ...sc, p: m.pw, t: Math.max(0, 100 - m.pw - sc.c) };
+  const tot = sc.t + sc.c + sc.p;
+  $('scoreBar').innerHTML = `
+    <div class="seg sb-t" style="width:${sc.t/tot*100}%">${sc.t} 分<small>技术</small></div>
+    <div class="seg sb-c" style="width:${sc.c/tot*100}%">${sc.c} 分<small>商务</small></div>
+    <div class="seg sb-p" style="width:${sc.p/tot*100}%">${sc.p} 分<small>报价</small></div>`;
+  $('scoreN').textContent = sc.n ? `${m.type}实测中位（n=${sc.n}）` : '该类型无评分样本，用通用构成';
+
+  const notes = [];
+  if (sc.p >= 60) notes.push(`<b>报价占 ${sc.p} 分</b>——价格是主战场，技术标只要不丢分即可，重心放报价测算。`);
+  else if (sc.p <= 30) notes.push(`<b>报价只占 ${sc.p} 分</b>——技术标才是决胜项，${sc.t} 分的技术分必须拉开差距。`);
+  else notes.push(`报价 ${sc.p} 分、技术 ${sc.t} 分，两头都要顾，没有明显短板。`);
+  if (m.type === '园林') notes.push('园林类报价权重常达 85%，几乎纯价格战——技术标写得再好也难翻盘。');
+  if (m.type === '市政') notes.push('市政类技术权重常达 50%，方案质量直接决定成败。');
+  $('scoreNote').innerHTML = notes.join('<br>');
+
+  /* 敏感度 */
+  const bumps = [
+    { l:'控制价 ±10%', d:'档位不变则影响 0', v: 0 },
+    { l:'投标人数 8→20', d: BIDDER_R !== null ? 'r=-0.006 实测无关' : '推断', v: 0 },
+    { l:'工期 +30%', d:'推断', v: daysAdj(m.days * 1.3, m.medDays) - m.dAdj },
+  ];
+  $('sens').innerHTML = bumps.map(b => `
+    <div class="s">
+      <div class="l">${b.l}</div>
+      <div class="v" style="color:${b.v > 0 ? 'var(--ok)' : b.v < 0 ? 'var(--miss)' : 'var(--ink-4)'}">${b.v > 0 ? '+' : ''}${b.v.toFixed(1)}</div>
+      <div class="d">${b.d}</div>
+    </div>`).join('');
+
+  /* 风险 */
+  const R = [];
+  R.push({ t:'ok', c:`基准来自 <b>${m.baseSrc}</b>，n=${m.baseN}。${m.baseN >= 20 ? '样本量足够，可作为基准。' : '样本偏少，区间可能失真。'}` });
+  R.push({ t:'ok', c:`<b>投标人数已实测无关</b>（r=${BIDDER_R}，n=${BIDDER_N}）——这是一个<b>否定结论</b>，比“不确定”更有价值：不用再花力气搞对手名单。` });
+  R.push({ t:'bad', c:`<b>对手是谁仍然不知道</b>——离散度中位 ${SPREAD_MED}%，但不知道这 ${SPREAD_MED}% 是“成本差异”还是“策略差异”。` });
+  R.push({ t:'bad', c:`<b>看不到流标项目</b>——报价太低导致的流标不在样本里，幸存者偏差。` });
+  if (m.cityAdj === 0) R.push({ t:'bad', c:`未选城市或该城市样本 <3 条，<b>城市修正按 0 处理</b>。` });
+  $('risk').innerHTML = R.map(r => `<div class="risk"><span class="i ${r.t === 'ok' ? 'ok' : ''}">${r.t === 'ok' ? '✓' : '⚠'}</span><span>${r.c}</span></div>`).join('');
+
+  /* 左侧提示 */
+  $('ctrlTier').textContent = `档位：${m.tier}`;
+  const tr = (D && D.typeRate) ? D.typeRate[m.type] : null;
+  $('typeHint').textContent = tr ? `该类型 ${tr.n} 条样本，中位下浮 ${tr.med}%` : '该类型无样本，回落到档位基准';
+  const mk2 = m.method && m.CT && m.CT.method && m.CT.method[m.method];
+  $('methodHint').innerHTML = mk2
+    ? `<span style="color:var(--ok)">${mk2.n} 条样本，中位 ${mk2.med}%</span>`
+    : (m.method ? '该办法在当前口径下样本不足' : '不选则按类型/档位推算');
+  const ag2 = m.agency && AGENCY && AGENCY.find(x => x.name === m.agency);
+  if (ag2) {
+    const t = agencyTier(ag2);
+    $('agencyHint').innerHTML = `<span style="color:${t.conf>=3?'var(--ok)':t.conf===2?'var(--part)':'var(--miss)'}">${ag2.n} 项 · 中位 ${ag2.med}% · 波动 ${ag2.sd} · 置信 ${t.lv}</span>`;
+  } else {
+    $('agencyHint').textContent = m.agency ? '样本不足（<2）' : `已收录 ${AGENCY ? AGENCY.length : 0} 个代理画像`;
+  }
+  /* 口径提示 */
+  const ch = CITY_HINT && m.city ? CITY_HINT[m.city] : null;
+  $('caliberHint').innerHTML = ch
+    ? `<span style="color:${ch.hint==='限价'?'var(--ok)':ch.limit_share>=0.5?'var(--part)':'var(--miss)'}">${m.city}：限价 ${ch.lim} / 估算 ${ch.est}（限价占 ${(ch.lim_share*100).toFixed(0)}%）→ 建议用「${ch.hint}」</span>`
+    : (m.caliber === 'mixed' ? '混合口径：误差可能 ±3 点' : '已手动指定');
+  const bk2 = m.buyer && BUYER && BUYER.find(x => x.name === m.buyer);
+  if (bk2) {
+    const t = buyerTier(bk2);
+    const tag = bk2.sd < 1 ? '极稳定' : bk2.sd < 3 ? '稳定' : bk2.sd < 6 ? '中等' : bk2.sd < 10 ? '波动较大' : '不稳定';
+    $('buyerHint').innerHTML = `<span style="color:${t.conf>=3?'var(--ok)':t.conf===2?'var(--part)':'var(--miss)'}">${bk2.n} 项 · 中位 ${bk2.med}% · 波动 ${bk2.sd}（${tag}）· 置信 ${t.lv}</span>`;
+  } else {
+    $('buyerHint').textContent = m.buyer ? '样本不足（<2）' : `已收录 ${BUYER ? BUYER.length : 0} 个招标人画像（n≥2）`;
+  }
+  const cr = (m.CT && m.CT.city) ? m.CT.city[m.city] : ((D && D.cityRate) ? D.cityRate[m.city] : null);
+  $('cityHint').textContent = m.city ? (cr ? `${m.city} ${cr.n} 条样本，中位 ${cr.med}%` : `${m.city} 样本 <3 条，不做城市修正`) : '不修正';
+  $('daysCmp').textContent = m.medDays ? `中位 ${m.medDays} 天` : '—';
+  $('daysVal').textContent = m.days;
+  $('bdVal').textContent = m.bidders;
+  $('pwVal').textContent = m.pw;
+  $('pwSrc').textContent = sc.n ? `默认 ${((D.score && D.score[m.type]) || {}).p} 分（实测）` : '默认 60 分';
+}
+
+/* ============================================================
+   初始化
+   ============================================================ */
+fetch('/model-data.json').then(r => r.json()).then(d => {
+  D = d;
+  // 同时加载实测的“人数-离散度”关系 与 评标办法系数
+  return Promise.all([
+    fetch('/bidder-rel.json').then(r => r.json()).catch(() => null),
+    fetch('/method-rel.json').then(r => r.json()).catch(() => null),
+    fetch('/buyer-rel.json').then(r => r.json()).catch(() => null),
+    fetch('/caliber.json').then(r => r.json()).catch(() => null),
+    fetch('/agencies.json').then(r => r.json()).catch(() => null),
+  ]).then(([b, mt, by, ca, ag]) => {
+    if (b) { BIDDER_R = b.pearson; BIDDER_N = b.n_clean; SPREAD_MED = b.spreadMedian; POS_MED = b.posMedian; }
+    if (mt) { METHOD = mt.method; METHOD_GLOBAL = mt.global; }
+    if (ca) { CAL = { limit: ca.limit, estimate: ca.estimate, mixed: ca.mixed }; CITY_HINT = ca.city_hint; }
+    if (ag) {
+      AGENCY = ag.items;
+      const sel = $('agency');
+      ag.items.forEach(x => {
+        const o = document.createElement('option');
+        o.value = x.name;
+        const tag = x.sd < 6 ? '稳' : x.sd < 10 ? '较稳' : x.sd < 15 ? '中' : '波动大';
+        o.textContent = `${x.name.slice(0,18)} — ${x.med}% [${x.n}项·${tag}]`;
+        sel.appendChild(o);
+      });
+    }
+    if (by) {
+      BUYER = by.buyers; WITHIN_RATIO = by.within_ratio;
+      const sel = $('buyer');
+      by.buyers.forEach(x => {
+        const o = document.createElement('option');
+        o.value = x.name;
+        const tag = x.sd < 1 ? '稳' : x.sd < 3 ? '较稳' : x.sd < 6 ? '中' : '波动大';
+        o.textContent = `${x.name.slice(0,20)} — ${x.med}% [${x.n}项·${tag}]`;
+        sel.appendChild(o);
+      });
+    }
+    return d;
+  });
+}).then(d => {
+  D = d;
+  $('rt').textContent = `${d.n_pairs} 条下浮率 · ${d.n_dur || 0} 条工期 · ${METHOD ? Object.keys(METHOD).length : 0} 种评标办法 · 人数 r=${BIDDER_R}`;
+  // 按类型设默认报价权重
+  const syncPw = () => {
+    const s = D.score ? D.score[$('type').value] : null;
+    if (s) { $('pweight').value = s.p; }
+  };
+  // URL 参数：?ctrl=4000&type=房建&method=综合评估法&city=芜湖市&days=300&bidders=8
+  const qp = new URLSearchParams(location.search);
+  const setIf = (id, k) => { const v = qp.get(k); if (v !== null && v !== '') $(id).value = v; };
+  setIf('ctrl','ctrl'); setIf('type','type'); setIf('method','method'); setIf('buyer','buyer');
+  setIf('agency','agency');
+  setIf('caliber','caliber');
+  setIf('city','city'); setIf('days','days'); setIf('bidders','bidders');
+  /* 初始化时：若未显式指定口径但选了城市，按城市倾向自动推断 */
+  if (!qp.get('caliber')) {
+    const c0 = $('city').value;
+    const h0 = c0 && CITY_HINT ? CITY_HINT[c0] : null;
+    if (h0) $('caliber').value = h0.hint === '限价' ? 'limit' : h0.hint === '估算' ? 'estimate' : 'mixed';
+  }
+  if (qp.get('pw')) $('pweight').value = qp.get('pw');
+  const st = qp.get('strat');
+  if (st) document.querySelectorAll('#strat button').forEach(b => b.classList.toggle('on', b.dataset.s === st));
+
+  $('type').addEventListener('change', () => { syncPw(); predict(); });
+  /* 选城市 → 自动推断口径 */
+  $('city').addEventListener('change', () => {
+    const c = $('city').value;
+    const h = c && CITY_HINT ? CITY_HINT[c] : null;
+    if (h) $('caliber').value = h.hint === '限价' ? 'limit' : h.hint === '估算' ? 'estimate' : 'mixed';
+    predict();
+  });
+  ['ctrl','method','buyer','agency','caliber','city','days','bidders','pweight'].forEach(id => {
+    $(id).addEventListener('input', predict);
+    $(id).addEventListener('change', predict);
+  });
+  document.querySelectorAll('#strat button').forEach(b => {
+    b.onclick = () => {
+      document.querySelectorAll('#strat button').forEach(x => x.classList.toggle('on', x === b));
+      predict();
+    };
+  });
+  syncPw();
+  predict();
+}).catch(e => {
+  $('rt').textContent = '数据加载失败：' + e.message;
+});
+</script>
+</body>
+</html>

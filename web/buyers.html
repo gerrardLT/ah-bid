@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>招标人画像 · 253 个</title>
+<style>
+:root{
+  --paper:#F2F0EB; --card:#FFF; --ink:#0A0A09; --ink-2:#3A352F;
+  --ink-3:#726B62; --ink-4:#A8A19A; --line:#DAD6CD; --line-2:#EDEAE3;
+  --ok:#1F6B3C; --ok-bg:#E9F2EC; --part:#9A6B12; --part-bg:#FBF2DF;
+  --miss:#B32D12; --miss-bg:#FBEAE6; --data:#1B4A8A;
+  --f:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  --m:"SF Mono","JetBrains Mono",Consolas,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--paper);color:var(--ink);font-family:var(--f);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased;overflow:hidden}
+button,input,select{font-family:inherit;font-size:inherit;color:inherit}
+button{cursor:pointer;border:none;background:none}
+.app{display:flex;flex-direction:column;height:100vh}
+
+header{background:var(--ink);color:#fff;padding:14px 26px;flex-shrink:0}
+.hd{display:flex;align-items:baseline;gap:16px;flex-wrap:wrap}
+.hd h1{font-size:18px;font-weight:750;letter-spacing:-.02em}
+.hd .sub{font-size:11.5px;color:rgba(255,255,255,.45);font-family:var(--m)}
+.hd .rt{margin-left:auto;display:flex;gap:22px;font-family:var(--m);font-size:11px;color:rgba(255,255,255,.55)}
+.hd .rt b{color:#fff;font-size:14px;margin-left:3px}
+
+/* 视图 tab */
+.tabs{display:flex;gap:2px;margin-left:8px}
+.vtab{
+  padding:5px 14px;border-radius:4px;font-size:12.5px;font-weight:600;
+  color:rgba(255,255,255,.55);transition:.13s;
+}
+.vtab:hover{color:#fff;background:rgba(255,255,255,.07)}
+.vtab.on{background:rgba(255,255,255,.14);color:#fff}
+.vtab b{font-family:var(--m);font-size:10.5px;font-weight:600;opacity:.7;margin-left:3px}
+
+/* 工具条 */
+.bar{
+  background:var(--card);border-bottom:1px solid var(--line);
+  padding:9px 26px;display:flex;align-items:center;gap:10px;flex-shrink:0;flex-wrap:wrap;
+}
+.search{position:relative;flex:1;max-width:380px}
+.search input{
+  width:100%;height:32px;padding:0 12px 0 30px;border:1px solid var(--line);
+  border-radius:4px;background:#FBFAF8;outline:none;font-size:13px;transition:.15s;
+}
+.search input:focus{border-color:var(--ink);background:#fff;box-shadow:0 0 0 3px rgba(10,10,9,.06)}
+.search::before{content:"⌕";position:absolute;left:10px;top:5px;color:var(--ink-4);font-size:15px}
+.chips{display:flex;gap:5px}
+.chip{
+  padding:5px 10px;border:1px solid var(--line);border-radius:14px;
+  font-size:12px;color:var(--ink-3);transition:.13s;white-space:nowrap;
+}
+.chip:hover{border-color:var(--ink-3);color:var(--ink-2)}
+.chip.on{background:var(--ink);border-color:var(--ink);color:#fff;font-weight:600}
+.chip .n{font-family:var(--m);font-size:10px;opacity:.65;margin-left:4px}
+.sel{height:32px;padding:0 8px;border:1px solid var(--line);border-radius:4px;background:#FBFAF8;font-size:12.5px;cursor:pointer;outline:none}
+
+/* 表格 */
+.wrap{flex:1;overflow:auto}
+.wrap::-webkit-scrollbar{width:10px}
+.wrap::-webkit-scrollbar-thumb{background:#D5CFC4;border-radius:5px;border:3px solid var(--paper)}
+
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+thead th{
+  position:sticky;top:0;z-index:5;
+  background:var(--ink);color:#fff;font-size:10px;font-weight:600;
+  letter-spacing:.05em;padding:8px 11px;text-align:left;white-space:nowrap;cursor:pointer;
+  user-select:none;
+}
+thead th:hover{background:#22201C}
+thead th .ar{opacity:.35;margin-left:3px;font-size:9px}
+thead th.on .ar{opacity:1;color:#FF7A5C}
+
+tbody td{padding:8px 11px;border-bottom:1px solid var(--line-2);vertical-align:middle}
+tbody tr{cursor:pointer;transition:.1s}
+tbody tr:hover td{background:#FBF9F4}
+tbody tr:hover .nm{color:var(--miss)}
+tbody tr.tier-hi td.lc{border-left:3px solid var(--ok)}
+tbody tr.tier-md td.lc{border-left:3px solid var(--part)}
+tbody tr.tier-lo td.lc{border-left:3px solid var(--line-2)}
+
+.nm{font-weight:600;color:var(--ink-2);line-height:1.35}
+.nm small{display:block;font-family:var(--m);font-size:9.5px;color:var(--ink-4);font-weight:400;margin-top:1px}
+.num{font-family:var(--m);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.num b{font-size:14px;font-weight:700;color:var(--ink)}
+.cell-city{font-size:12px;color:var(--ink-3);white-space:nowrap}
+.cell-kind{font-family:var(--m);font-size:10px;color:var(--ink-4);white-space:nowrap}
+
+.pill{display:inline-block;padding:2px 7px;border-radius:3px;font-family:var(--m);font-size:9.5px;font-weight:600;white-space:nowrap}
+.pill.hi{background:var(--ok-bg);color:var(--ok)}
+.pill.md{background:var(--part-bg);color:var(--part)}
+.pill.lo{background:var(--miss-bg);color:var(--miss)}
+.pill.single{background:#F0EEE9;color:var(--ink-4)}
+
+/* 区间条 */
+.range{display:flex;align-items:center;gap:6px;min-width:130px}
+.range .track{flex:1;height:16px;background:var(--line-2);position:relative;border-radius:2px;overflow:hidden}
+.range .track i{position:absolute;top:0;bottom:0;background:var(--ink-3);opacity:.35}
+.range .track u{position:absolute;top:2px;bottom:2px;width:2px;background:var(--miss)}
+.range .lbl{font-family:var(--m);font-size:10px;color:var(--ink-3);min-width:54px;text-align:right}
+
+/* 抽屉 */
+.drawer{position:fixed;inset:0;z-index:100;display:none}
+.drawer.on{display:block}
+.drawer .mask{position:absolute;inset:0;background:rgba(10,10,9,.4)}
+.drawer .pane{
+  position:absolute;right:0;top:0;bottom:0;width:min(880px,94vw);background:var(--card);
+  display:flex;flex-direction:column;box-shadow:-10px 0 40px rgba(0,0,0,.18);
+  animation:sl .2s ease-out;
+}
+@keyframes sl{from{transform:translateX(24px);opacity:.6}to{transform:none;opacity:1}}
+.drawer .hd2{padding:14px 20px;background:var(--ink);color:#fff;display:flex;align-items:center;gap:10px;flex-shrink:0}
+.drawer .hd2 .t{font-size:15px;font-weight:700;line-height:1.3}
+.drawer .hd2 .x{margin-left:auto;font-size:20px;color:rgba(255,255,255,.6);padding:0 6px;line-height:1}
+.drawer .hd2 .x:hover{color:#fff}
+.drawer .bd{flex:1;overflow-y:auto;padding:18px 22px 32px}
+.drawer .bd::-webkit-scrollbar{width:8px}
+.drawer .bd::-webkit-scrollbar-thumb{background:#D5CFC4;border-radius:4px}
+
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);margin-bottom:18px}
+.stat{background:var(--card);padding:12px 14px}
+.stat .l{font-size:10.5px;color:var(--ink-3);margin-bottom:4px}
+.stat .v{font-family:var(--m);font-size:20px;font-weight:700;line-height:1.1}
+.stat .d{font-family:var(--m);font-size:9.5px;color:var(--ink-4);margin-top:3px}
+
+.sect{margin-bottom:16px}
+.sect .st{font-family:var(--m);font-size:10px;letter-spacing:.1em;color:var(--ink-3);margin-bottom:8px;border-bottom:1px solid var(--line-2);padding-bottom:6px}
+
+table.mini{width:100%;border-collapse:collapse;font-size:12px}
+table.mini th{text-align:left;font-size:9.5px;color:var(--ink-3);font-weight:600;padding:4px 8px 4px 0;border-bottom:1px solid var(--line)}
+table.mini td{padding:6px 8px 6px 0;border-bottom:1px solid var(--line-2);vertical-align:top}
+table.mini td.t{max-width:340px;word-break:break-word;line-height:1.4}
+table.mini td.r{text-align:right;font-family:var(--m);font-variant-numeric:tabular-nums;white-space:nowrap}
+table.mini tr:hover td{background:#FBF9F4}
+
+.empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--ink-4);font-size:13px}
+@media (max-width:900px){
+  .stats{grid-template-columns:1fr 1fr}
+  .cell-kind,.col-hide{display:none}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="hd">
+      <h1 id="pgTitle">招标人画像</h1>
+      <span class="sub" id="pgSub">806 个招标人 · 已按价格口径分层</span>
+      <div class="tabs" id="vTabs">
+        <button class="vtab on" data-v="buyer">招标人 <b id="nB">—</b></button>
+        <button class="vtab" data-v="agency">代理机构 <b id="nA">—</b></button>
+      </div>
+      <div class="rt">
+        <span>可直接用<b id="nUsable">—</b></span>
+        <span>全局中位（限价/估算）<b id="nMed">—</b></span>
+      </div>
+    </div>
+  </header>
+
+  <div class="bar">
+    <div class="search"><input id="q" placeholder="搜索招标人名称、城市、代理机构…"></div>
+    <div class="chips" id="chips">
+      <button class="chip on" data-lv="all">全部<span class="n" id="c-all"></span></button>
+      <button class="chip" data-lv="usable">可直接用<span class="n" id="c-usable"></span></button>
+      <button class="chip" data-lv="2">≥2 项<span class="n" id="c-2"></span></button>
+      <button class="chip" data-lv="1">仅 1 项<span class="n" id="c-1"></span></button>
+    </div>
+    <div class="chips" id="calChips">
+      <button class="chip on" data-cal="">全口径</button>
+      <button class="chip" data-cal="限价">限价</button>
+      <button class="chip" data-cal="估算">估算</button>
+      <button class="chip" data-cal="mix">混口径</button>
+    </div>
+    <select class="sel" id="city"><option value="">全部城市</option></select>
+    <select class="sel" id="kind">
+      <option value="">全部类型</option>
+      <option value="国企/公司">国企/公司</option>
+      <option value="政府机关">政府机关</option>
+      <option value="事业单位">事业单位</option>
+      <option value="其他">其他</option>
+    </select>
+    <select class="sel" id="sort">
+      <option value="conf">按可信度</option>
+      <option value="med-desc">下浮率 高→低</option>
+      <option value="med-asc">下浮率 低→高</option>
+      <option value="n">按项目数</option>
+      <option value="sd">按波动 小→大</option>
+    </select>
+  </div>
+
+  <div class="wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:34%">招标人</th>
+          <th style="width:80px">城市</th>
+          <th style="width:80px" class="col-hide">类型</th>
+          <th style="width:64px;text-align:right">项目数</th>
+          <th style="width:58px">口径</th>
+          <th style="width:88px;text-align:right">典型规模</th>
+          <th style="width:80px;text-align:right">下浮中位</th>
+          <th style="width:170px">历史区间</th>
+          <th style="width:64px;text-align:right">波动</th>
+          <th style="width:82px">可信度</th>
+        </tr>
+      </thead>
+      <tbody id="tb"></tbody>
+    </table>
+  </div>
+  <div class="empty" id="empty" style="display:none">没有匹配的招标人</div>
+</div>
+
+<div class="drawer" id="dw">
+  <div class="mask" onclick="closeDw()"></div>
+  <div class="pane">
+    <div class="hd2">
+      <span class="t" id="dwT">—</span>
+      <button class="x" onclick="closeDw()">×</button>
+    </div>
+    <div class="bd" id="dwB"></div>
+  </div>
+</div>
+
+<script>
+let DATA = null, ALL = [], VIEW = [], ALL_BUYER = [], ALL_AGENCY = [], VIEWKIND = 'buyer';
+let F = { lv: 'all', q: '', city: '', kind: '', sort: 'conf', cal: '' };
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = n => n == null ? '—' : Number(n).toLocaleString('zh-CN');
+
+const LV_TXT = { 4:'高', 3:'较高', 2:'中', 1:'低', 0:'单例' };
+const LV_CLS = { 4:'hi', 3:'hi', 2:'md', 1:'lo', 0:'single' };
+const GLOBAL_MED = DATA ? (DATA.global_limit + DATA.global_estimate) / 2 : 15;
+
+/* ---------- 渲染 ---------- */
+function render(){
+  let v = ALL.slice();
+  if (F.lv === 'usable') v = v.filter(x => x.conf >= 3);
+  else if (F.lv === '2') v = v.filter(x => x.n >= 2);
+  else if (F.lv === '1') v = v.filter(x => x.n === 1);
+  if (F.city) v = v.filter(x => x.city === F.city);
+  if (F.kind) v = v.filter(x => x.kind === F.kind);
+  if (F.cal === 'mix') v = v.filter(x => x.purity < 1);
+  else if (F.cal) v = v.filter(x => x.caliber === F.cal);
+  if (F.q) {
+    const q = F.q.toLowerCase();
+    v = v.filter(x => (x.name || '').toLowerCase().includes(q)
+      || (x.city || '').includes(q) || (x.agency || '').toLowerCase().includes(q));
+  }
+  const cmp = {
+    conf: (a,b) => b.conf - a.conf || b.n - a.n || b.med - a.med,
+    'med-desc': (a,b) => b.med - a.med,
+    'med-asc': (a,b) => a.med - b.med,
+    n: (a,b) => b.n - a.n || b.med - a.med,
+    sd: (a,b) => (a.sd ?? 99) - (b.sd ?? 99),
+  }[F.sort];
+  v.sort(cmp);
+  VIEW = v;
+
+  $('tb').innerHTML = v.map((x, i) => {
+    const tier = x.conf >= 3 ? 'tier-hi' : x.conf === 2 ? 'tier-md' : 'tier-lo';
+    const lo = Math.max(0, Math.min(45, x.lo)), hi = Math.max(0, Math.min(45, x.hi));
+    const medPct = Math.max(0, Math.min(45, x.med)) / 45 * 100;
+    return `<tr class="${tier}" data-i="${i}">
+      <td class="lc"><div class="nm">${esc(x.name)}<small>${VIEWKIND === 'buyer' ? esc(x.agency || '—') : `服务 ${(x.profile && x.profile.n_buyers) || 0} 个招标人`}</small></div></td>
+      <td class="cell-city">${esc(x.city || '—')}</td>
+      <td class="cell-kind col-hide">${VIEWKIND === 'buyer' ? esc(x.kind || '—') : esc((x.profile && x.profile.type_top) || '—')}</td>
+      <td class="num">${x.n}</td>
+      <td><span class="pill ${x.purity<1?'md':'ok'}" style="font-size:9px">${esc(x.caliber)}${x.purity<1?'⚠':''}</span></td>
+      <td class="num" style="color:var(--ink-3);font-size:11.5px">${x.profile && x.profile.ctrl_med ? fmt(x.profile.ctrl_med)+'万' : '—'}</td>
+      <td class="num"><b>${x.med}%</b></td>
+      <td>
+        <div class="range">
+          <div class="track"><i style="left:${lo/45*100}%;width:${Math.max(1,(hi-lo)/45*100)}%"></i><u style="left:${medPct}%"></u></div>
+          <span class="lbl">${x.lo}~${x.hi}%</span>
+        </div>
+      </td>
+      <td class="num">${x.sd ?? '—'}</td>
+      <td><span class="pill ${LV_CLS[x.conf]}">${LV_TXT[x.conf]}</span></td>
+    </tr>`;
+  }).join('');
+
+  $('empty').style.display = v.length ? 'none' : 'flex';
+  $('tb').querySelectorAll('tr').forEach(tr => {
+    tr.onclick = () => openDw(VIEW[+tr.dataset.i]);
+  });
+  /* 口径 chips 计数 */
+  const cnt = { '': ALL.length, '限价': 0, '估算': 0, 'mix': 0 };
+  ALL.forEach(x => { if (x.purity < 1) cnt['mix']++; else cnt[x.caliber]++; });
+  document.querySelectorAll('#calChips .chip').forEach(c => {
+    const k = c.dataset.cal;
+    const n = cnt[k];
+    if (!c.querySelector('.n')) c.insertAdjacentHTML('beforeend', '<span class="n"></span>');
+    c.querySelector('.n').textContent = n ?? 0;
+  });
+  /* 一级筛选计数 */
+  $('c-all').textContent = ALL.length;
+  $('c-usable').textContent = ALL.filter(x => x.conf >= 3).length;
+  $('c-2').textContent = ALL.filter(x => x.n >= 2).length;
+  $('c-1').textContent = ALL.filter(x => x.n === 1).length;
+  $('nUsable').textContent = ALL.filter(x => x.conf >= 3).length;
+}
+
+/* ---------- 抽屉 ---------- */
+function openDw(x){
+  const t = x.conf >= 3 ? '可直接使用' : x.conf === 2 ? '可参考' : x.conf === 1 ? '波动过大，仅看区间' : '单例，仅供参考';
+  $('dwT').textContent = x.name;
+  const projs = x.projs || [];
+  const p = x.profile || {};
+  $('dwB').innerHTML = `
+    <div class="stats">
+      <div class="stat"><div class="l">下浮中位</div><div class="v" style="color:var(--miss)">${x.med}%</div><div class="d">${x.caliber}口径全局 ${x.caliber==='限价'?DATA.global_limit:DATA.global_estimate}% (${x.adj > 0 ? '+' : ''}${x.adj})</div></div>
+      <div class="stat"><div class="l">历史区间</div><div class="v">${x.lo}~${x.hi}%</div><div class="d">跨度 ${(x.hi - x.lo).toFixed(1)} 点</div></div>
+      <div class="stat"><div class="l">波动（标准差）</div><div class="v">${x.sd ?? '—'}</div><div class="d">${x.sd == null ? '单项目' : x.sd < 1 ? '极稳定' : x.sd < 3 ? '稳定' : x.sd < 6 ? '中等' : '不稳定'}</div></div>
+      <div class="stat"><div class="l">项目数</div><div class="v">${x.n}</div><div class="d">${t}</div></div>
+    </div>
+    ${x.purity < 1 ? `<div style="margin-bottom:16px;padding:10px 14px;background:var(--part-bg);border-left:3px solid var(--part);font-size:12.5px;line-height:1.7">
+      <b>⚠ 这个招标人两种口径都用了</b>（纯度 ${(x.purity*100).toFixed(0)}%）：<br>
+      ${x.by_caliber['限价'].n ? `限价 ${x.by_caliber['限价'].n} 个，中位 <b>${x.by_caliber['限价'].med}%</b>` : '限价 0 个'}　｜　
+      ${x.by_caliber['估算'].n ? `估算 ${x.by_caliber['估算'].n} 个，中位 <b>${x.by_caliber['估算'].med}%</b>` : '估算 0 个'}
+      <br><span style="color:var(--ink-3)">上表的中位数是两者混合的结果，实际应按口径分开看。</span>
+    </div>` : ''}
+    <div class="sect">
+      <div class="st">项目画像（这个招标人偏愛发什么项目）</div>
+      <table class="mini">
+        <tr><td style="width:90px;color:var(--ink-3)">典型规模</td><td>${p && p.ctrl_med ? `<b>${fmt(p.ctrl_med)} 万</b>　<span style="color:var(--ink-3);font-size:11.5px">P25~P75 ${fmt(p.ctrl_p25)}~${fmt(p.ctrl_p75)} 万</span>` : '—'}</td></tr>
+        <tr><td style="color:var(--ink-3)">典型工期</td><td>${p && p.dur_med ? `<b>${p.dur_med} 天</b>　<span style="color:var(--ink-3);font-size:11.5px">${p.dur_lo}~${p.dur_hi} 天（覆盖 ${p.dur_cov || 0}%，${p.dur_n} 个）</span>` : '<span style="color:var(--ink-4)">该招标人项目未解析出工期</span>'}</td></tr>
+        <tr><td style="color:var(--ink-3)">主项目类型</td><td>${p && p.type_top ? `<b>${esc(p.type_top)}</b>${Object.keys(p.type_mix||{}).length>1 ? `　<span style="color:var(--ink-3);font-size:11.5px">还做过：${Object.entries(p.type_mix).slice(1).map(([k,v])=>k+' '+v).join('、')}</span>` : '　<span style="color:var(--ok);font-size:11.5px">单一类型</span>'}` : '—'}</td></tr>
+        <tr><td style="color:var(--ink-3)">有价项目</td><td>${p ? p.ctrl_n : 0} 个（用于算规模）；${x.n} 个可算下浮</td></tr>
+      </table>
+    </div>
+    <div class="sect">
+      <div class="st">基本信息</div>
+      <table class="mini">
+        <tr><td style="width:90px;color:var(--ink-3)">城市</td><td>${esc(x.city || '—')}</td></tr>
+        <tr><td style="color:var(--ink-3)">类型</td><td>${esc(x.kind || '—')}</td></tr>
+        <tr><td style="color:var(--ink-3)">常用代理</td><td>${esc(x.agency || '—')}</td></tr>
+        <tr><td style="color:var(--ink-3)">价格口径</td><td><b>${esc(x.caliber)}</b>（纯度 ${(x.purity*100).toFixed(0)}%）</td></tr>
+      </table>
+    </div>
+    <div class="sect">
+      <div class="st">历史项目（${projs.length} 个）</div>
+      <table class="mini">
+        <thead><tr><th>项目</th><th style="width:56px">口径</th><th style="width:70px">日期</th><th style="width:66px;text-align:right">控制价</th><th style="width:66px;text-align:right">中标价</th><th style="width:58px;text-align:right">下浮</th></tr></thead>
+        <tbody>${projs.map(p => `<tr>
+          <td class="t">${esc(p.title)}</td>
+          <td style="font-family:var(--m);font-size:9.5px;color:${p.pk==='限价'?'var(--ok)':'var(--part)'}">${esc(p.pk)}</td>
+          <td class="r" style="color:var(--ink-4);font-size:10.5px">${esc(p.date || '')}</td>
+          <td class="r">${fmt(p.ctrl)}万</td>
+          <td class="r">${fmt(p.win)}万</td>
+          <td class="r" style="color:${p.rate > 15 ? 'var(--miss)' : 'var(--ok)'};font-weight:700">${p.rate}%</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>
+    <div class="sect">
+      <div class="st">怎么用</div>
+      <div style="font-size:12.5px;line-height:1.75;color:var(--ink-2)">
+        ${x.conf >= 4 ? '这个招标人<b>定价极稳定</b>。投标时可以直接按中位报，偏离不要超过 ±2 个点。'
+        : x.conf === 3 ? '定价较稳定，可按<b>中位 ±3 个点</b>把握。'
+        : x.conf === 2 ? '有一定规律，但波动中等，建议<b>结合评标办法</b>一起判断。'
+        : x.conf === 1 ? '<b>波动过大，中位数不可用</b>。只能参考区间上下界，实际要按项目具体情况判断。'
+        : '只有 1 个项目，<b>没有统计意义</b>，仅作历史参考。'}
+      </div>
+    </div>`;
+  $('dw').classList.add('on');
+}
+function closeDw(){ $('dw').classList.remove('on'); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDw(); });
+
+/* ---------- 初始化 ---------- */
+fetch('/buyers.json').then(r => r.json()).then(async d => {
+  DATA = d; ALL_BUYER = d.items;
+  const ag = await fetch('/agencies.json').then(r => r.json()).catch(() => null);
+  ALL_AGENCY = ag ? ag.items : [];
+  DATA.agGlobal = ag ? ag.global_limit : null;
+
+  $('nB').textContent = ALL_BUYER.length;
+  $('nA').textContent = ALL_AGENCY.length;
+
+  /* 视图切换 */
+  function switchView(kind){
+    VIEWKIND = kind;
+    ALL = kind === 'buyer' ? ALL_BUYER : ALL_AGENCY;
+    document.querySelectorAll('.vtab').forEach(t => t.classList.toggle('on', t.dataset.v === kind));
+    $('pgTitle').textContent = kind === 'buyer' ? '招标人画像' : '代理机构画像';
+    $('pgSub').textContent = kind === 'buyer'
+      ? `${ALL.length} 个招标人 · 已按价格口径分层`
+      : `${ALL.length} 个代理机构 · 代理决定招标文件怎么写，比招标人更影响报价`;
+    $('nMed').textContent = `${d.global_limit}% / ${d.global_estimate}%`;
+    $('nUsable').textContent = ALL.filter(x => x.conf >= 3).length;
+    /* 重建城市下拉 */
+    const cities = {};
+    ALL.forEach(x => { if (x.city) cities[x.city] = (cities[x.city] || 0) + 1; });
+    const sel = $('city');
+    sel.innerHTML = '<option value="">全部城市</option>';
+    Object.entries(cities).sort((a,b) => b[1]-a[1]).forEach(([c, n]) => {
+      const o = document.createElement('option');
+      o.value = c; o.textContent = `${c} (${n})`;
+      sel.appendChild(o);
+    });
+    /* 代理没有「类型」区分，隐藏该筛选 */
+    $('kind').style.display = kind === 'buyer' ? '' : 'none';
+    F.city = ''; F.kind = '';
+    render();
+  }
+  document.querySelectorAll('.vtab').forEach(t => {
+    t.onclick = () => switchView(t.dataset.v);
+  });
+
+  $('nB').textContent = ALL_BUYER.length;
+  $('nA').textContent = ALL_AGENCY.length;
+
+  // 事件
+  $('q').oninput = e => { F.q = e.target.value.trim(); render(); };
+  $('city').onchange = e => { F.city = e.target.value; render(); };
+  $('kind').onchange = e => { F.kind = e.target.value; render(); };
+  $('sort').onchange = e => { F.sort = e.target.value; render(); };
+  document.querySelectorAll('#chips .chip').forEach(c => {
+    c.onclick = () => {
+      document.querySelectorAll('#chips .chip').forEach(x => x.classList.toggle('on', x === c));
+      F.lv = c.dataset.lv; render();
+    };
+  });
+  document.querySelectorAll('#calChips .chip').forEach(c => {
+    c.onclick = () => {
+      document.querySelectorAll('#calChips .chip').forEach(x => x.classList.toggle('on', x === c));
+      F.cal = c.dataset.cal; render();
+    };
+  });
+
+  switchView('buyer');
+}).catch(e => {
+  $('tb').innerHTML = `<tr><td colspan="8" style="padding:20px;color:#B32D12">加载失败：${esc(e.message)}</td></tr>`;
+});
+</script>
+</body>
+</html>

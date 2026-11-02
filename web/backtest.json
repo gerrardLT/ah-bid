@@ -1,0 +1,51 @@
+{
+ "old": {
+  "cfg": {
+   "buyer_min": 2,
+   "buyer_sd": 6,
+   "method_min": 5,
+   "type_min": 5,
+   "tier_min": 5,
+   "cross_min": 8
+  },
+  "mae": 7.181,
+  "med": 4.954,
+  "hit3": 34.4,
+  "hit5": 50.8,
+  "used": {
+   "buyer": 392,
+   "method": 219,
+   "cross": 953,
+   "type": 54,
+   "tier": 0,
+   "global": 0
+  }
+ },
+ "new": {
+  "cfg": {
+   "buyer_min": 2,
+   "buyer_sd": 99,
+   "method_min": 5,
+   "type_min": 5,
+   "tier_min": 5,
+   "cross_min": 99999
+  },
+  "mae": 6.991,
+  "med": 5.0,
+  "hit3": 33.6,
+  "hit5": 50.8,
+  "used": {
+   "buyer": 597,
+   "method": 189,
+   "cross": 0,
+   "type": 832,
+   "tier": 0,
+   "global": 0
+  }
+ },
+ "grid_cross": 99999,
+ "grid_buyer": [
+  2,
+  99
+ ]
+}

@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>数据浏览器 · 技术标数据底座</title>
+<style>
+:root{
+  --bg:#EFEDE8;
+  --panel:#FFFFFF;
+  --line:#D5D1C7;
+  --line-2:#E9E6DF;
+  --thead:#1A1815;
+  --thead-ink:#F7F5F1;
+  --ink:#0A0A09;
+  --ink-2:#3B3630;
+  --ink-3:#6E675E;
+  --accent:#C8371A;
+  --accent-lite:#FF6A45;
+  --f:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  --m:"SF Mono","JetBrains Mono",Consolas,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{
+  background:var(--bg);color:var(--ink);font-family:var(--f);
+  font-size:13px;line-height:1.5;overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+button{font-family:inherit;font-size:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,select{font-family:inherit;font-size:inherit}
+
+.app{display:flex;flex-direction:column;height:100vh}
+
+/* 主体：左侧表列表 + 右侧表格 */
+.body{flex:1;display:grid;grid-template-columns:212px 1fr;overflow:hidden;min-height:0}
+
+aside{
+  background:var(--panel);border-right:1px solid var(--line);
+  overflow-y:auto;display:flex;flex-direction:column;
+}
+aside::-webkit-scrollbar{width:6px}
+aside::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+.side-hd{
+  padding:9px 14px 7px;font-size:10px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-3);font-weight:700;
+  border-bottom:1px solid var(--line-2);flex-shrink:0;
+}
+.side-item{
+  display:flex;align-items:center;gap:8px;width:100%;
+  padding:9px 14px;text-align:left;color:var(--ink-2);
+  border-left:3px solid transparent;transition:.12s;
+  border-bottom:1px solid var(--line-2);
+}
+.side-item:hover{background:#F4F1EC;color:var(--ink)}
+.side-item.on{
+  background:var(--accent);color:#fff;font-weight:650;
+  border-left-color:#8E2612;
+}
+.side-item .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.side-item .n{
+  font-family:var(--m);font-size:10px;color:var(--ink-3);
+  font-variant-numeric:tabular-nums;flex-shrink:0;
+}
+.side-item.on .n{color:rgba(255,255,255,.82)}
+.side-item .v{
+  font-family:var(--m);font-size:9px;color:var(--ink-3);
+  border:1px solid var(--line);padding:0 3px;border-radius:2px;flex-shrink:0;
+}
+.side-item.on .v{color:rgba(255,255,255,.75);border-color:rgba(255,255,255,.4)}
+
+/* 侧栏分组（折叠） */
+.side-grp{border-bottom:1px solid var(--line-2)}
+.side-grp-hd{
+  display:flex;align-items:center;gap:7px;width:100%;
+  padding:9px 12px;text-align:left;color:var(--ink-3);
+  font-size:10.5px;font-weight:700;letter-spacing:.06em;
+  transition:.12s;
+}
+.side-grp-hd:hover{background:#F7F5F1;color:var(--ink-2)}
+.side-grp.open .side-grp-hd{color:var(--ink);background:#F7F5F1}
+.side-grp-hd .arw{
+  font-size:11px;line-height:1;transition:transform .15s;
+  color:var(--ink-3);width:9px;
+}
+.side-grp.open .side-grp-hd .arw{transform:rotate(90deg);color:var(--accent)}
+.side-grp-hd .gt{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.side-grp-hd .gn{
+  font-family:var(--m);font-size:9.5px;color:var(--ink-3);
+  font-weight:400;letter-spacing:0;
+}
+.side-items{padding-bottom:2px}
+/* 子项缩进一层，与分组标题分开 */
+.side-items .side-item{padding-left:26px;font-size:12.5px;border-bottom:none}
+
+/* 文件操作 */
+.file-ops{display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap}
+.file-ops button{
+  height:26px;padding:0 10px;border-radius:4px;
+  background:var(--accent);color:#fff;font-size:12px;font-weight:600;
+  transition:.13s;
+}
+.file-ops button:hover{background:#A82C13}
+.file-ops a{
+  height:26px;display:inline-flex;align-items:center;padding:0 10px;
+  border:1px solid var(--line);border-radius:4px;
+  color:var(--ink-2);font-size:12px;text-decoration:none;transition:.13s;
+}
+.file-ops a:hover{border-color:var(--ink);color:var(--ink)}
+.file-ops .fsize{font-family:var(--m);font-size:10.5px;color:var(--ink-3)}
+.file-ops .fsize.miss{color:var(--accent)}
+
+/* 预览框 */
+.pv-box{
+  position:sticky;top:-14px;z-index:3;
+  margin:-14px -18px 14px;padding:0;
+  background:var(--panel);border-bottom:2px solid var(--thead);
+}
+.pv-box iframe{
+  display:block;width:100%;height:58vh;border:none;background:#F2F0EB;
+}
+.pv-box .pv-hd{
+  display:flex;align-items:center;gap:10px;
+  padding:6px 18px;background:var(--thead);color:var(--thead-ink);
+  font-size:11.5px;font-weight:600;
+}
+.pv-box .pv-x{
+  margin-left:auto;color:rgba(255,255,255,.7);font-size:11.5px;
+  padding:2px 8px;border-radius:3px;
+}
+.pv-box .pv-x:hover{background:rgba(255,255,255,.14);color:#fff}
+
+/* 关联数据块 */
+.rel-block{margin-top:20px;border-top:2px solid var(--thead);padding-top:14px}
+.rel-loading{font-size:12px;color:var(--ink-3);padding:8px 0}
+.rel-grp{margin-bottom:18px}
+.rel-grp:last-child{margin-bottom:0}
+.rel-hd{
+  display:flex;align-items:center;gap:10px;margin-bottom:7px;
+  padding-bottom:6px;border-bottom:1px solid var(--line);
+  flex-wrap:nowrap;
+}
+.rel-hd .rt{font-size:13px;font-weight:700;color:var(--ink);flex-shrink:0}
+.rel-hd .rn{font-family:var(--m);font-size:10.5px;color:var(--ink-3);flex-shrink:0;white-space:nowrap}
+.rel-hd .rj{
+  margin-left:auto;height:24px;padding:0 9px;border-radius:4px;
+  border:1px solid var(--line);color:var(--ink-2);font-size:11.5px;
+  transition:.13s;white-space:nowrap;flex-shrink:0;
+}
+.rel-hd .rj:hover{background:var(--thead);color:#fff;border-color:var(--thead)}
+.rel-tbl-wrap{overflow-x:auto}
+.rel-tbl{border-collapse:collapse;width:100%;font-size:12px;table-layout:auto}
+.rel-tbl th{
+  text-align:left;font-weight:600;font-size:10px;letter-spacing:.05em;
+  color:var(--ink-3);padding:4px 10px 4px 0;
+  border-bottom:1px solid var(--line);white-space:nowrap;
+}
+.rel-tbl td{
+  padding:5px 10px 5px 0;border-bottom:1px solid var(--line-2);
+  vertical-align:top;
+}
+.rel-tbl td.num{text-align:right;font-family:var(--m);font-variant-numeric:tabular-nums;font-weight:500;color:#000;white-space:nowrap;width:1%}
+.rel-tbl td.nul{color:#A9A29A;font-family:var(--m);font-size:10.5px;width:1%}
+.rel-tbl td.txt{line-height:1.5;word-break:break-word;max-width:520px;white-space:nowrap}
+.rel-tbl td.wide{line-height:1.5;word-break:break-word;width:100%;font-family:var(--m);font-size:11px;color:var(--ink-2)}
+.rel-tbl a.flink{color:var(--accent);text-decoration:none;font-weight:600}
+.rel-tbl a.flink:hover{text-decoration:underline}
+
+main{display:flex;flex-direction:column;overflow:hidden;min-height:0;background:var(--panel)}
+
+/* ============ 第一行：品牌 + 工具 ============ */
+.row-brand{
+  background:var(--panel);
+  display:flex;align-items:center;gap:14px;
+  padding:0 16px;height:46px;
+  border-bottom:1px solid var(--line);
+}
+.logo{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px;letter-spacing:-.015em}
+.logo .d{width:8px;height:8px;border-radius:50%;background:var(--accent);flex-shrink:0}
+.logo .n{
+  font-family:var(--m);font-size:10px;color:#fff;background:var(--thead);
+  padding:2px 7px;border-radius:3px;font-weight:500;letter-spacing:.02em;
+  white-space:nowrap;
+}
+.spacer{flex:1}
+
+.search{position:relative;width:250px}
+.search input{
+  width:100%;height:29px;padding:0 28px 0 10px;
+  border:1px solid var(--line);background:var(--bg);border-radius:4px;
+  outline:none;transition:.15s;color:var(--ink);font-size:12.5px;
+}
+.search input:focus{border-color:var(--accent);background:#fff;box-shadow:0 0 0 3px rgba(200,55,26,.12)}
+.search input::placeholder{color:var(--ink-3)}
+.search .ic{position:absolute;right:9px;top:50%;transform:translateY(-50%);color:var(--ink-3);font-size:12px;pointer-events:none}
+.sel{height:29px;padding:0 6px;border:1px solid var(--line);background:#fff;border-radius:4px;outline:none;color:var(--ink-2);font-size:12.5px}
+.btn{height:29px;padding:0 11px;border:1px solid var(--line);background:#fff;border-radius:4px;color:var(--ink-2);transition:.15s;white-space:nowrap;font-size:12.5px}
+.btn:hover{background:var(--thead);color:#fff;border-color:var(--thead)}
+
+/* ============ 第二行：分组 Tab ============ */
+.row-tabs{
+  background:var(--panel);
+  display:flex;align-items:stretch;gap:0;
+  padding:0 16px;height:38px;
+  border-bottom:1px solid var(--line);
+  overflow-x:auto;scrollbar-width:none;
+}
+.row-tabs::-webkit-scrollbar{display:none}
+.tab{
+  position:relative;padding:0 15px;white-space:nowrap;
+  color:var(--ink-3);font-size:13px;font-weight:500;
+  border-bottom:2px solid transparent;transition:.13s;
+}
+.tab:hover{color:var(--ink-2)}
+.tab.on{color:var(--ink);font-weight:700;border-bottom-color:var(--accent)}
+.tab .cnt{
+  font-family:var(--m);font-size:10px;color:var(--ink-3);
+  margin-left:5px;font-weight:400;
+}
+.tab.on .cnt{color:var(--accent)}
+
+/* ============ 第三行：表 Chips ============ */
+.row-chips{
+  background:#F7F5F1;
+  display:flex;align-items:center;gap:6px;flex-wrap:nowrap;
+  padding:7px 16px;
+  border-bottom:2px solid var(--thead);
+  overflow-x:auto;scrollbar-width:none;
+}
+.row-chips::-webkit-scrollbar{display:none}
+.chip{
+  display:flex;align-items:center;gap:6px;
+  height:26px;padding:0 10px;border-radius:4px;
+  border:1px solid var(--line);background:#fff;
+  color:var(--ink-2);font-size:12.5px;white-space:nowrap;transition:.13s;
+}
+.chip:hover{border-color:var(--ink-2);color:var(--ink)}
+.chip.on{
+  background:var(--accent);border-color:var(--accent);
+  color:#fff;font-weight:650;
+  box-shadow:0 1px 3px rgba(200,55,26,.3);
+}
+.chip .n{font-family:var(--m);font-size:10px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.chip.on .n{color:rgba(255,255,255,.85)}
+.chip .v{font-family:var(--m);font-size:9px;opacity:.6}
+.chip.on .v{color:rgba(255,255,255,.8);opacity:1}
+
+/* ============ 表格区 ============ */
+.tbl-wrap{overflow:auto;background:var(--panel);position:relative}
+.tbl-wrap::-webkit-scrollbar{width:11px;height:11px}
+.tbl-wrap::-webkit-scrollbar-thumb{background:#D8D4CC;border-radius:6px;border:3px solid var(--panel)}
+.tbl-wrap::-webkit-scrollbar-thumb:hover{background:#C4BFB5}
+
+table{border-collapse:separate;border-spacing:0;font-size:12.5px;min-width:100%}
+thead th{
+  position:sticky;top:0;z-index:2;
+  background:var(--thead);border-bottom:2px solid #000;
+  padding:0;text-align:left;font-weight:600;white-space:nowrap;
+}
+thead th button{
+  display:flex;flex-direction:column;align-items:flex-start;gap:1px;
+  width:100%;padding:7px 11px 8px;
+  color:var(--thead-ink);font-weight:600;font-size:12px;
+  letter-spacing:.02em;text-align:left;
+}
+thead th button:hover{background:rgba(255,255,255,.09)}
+thead th .h{display:flex;align-items:center;gap:5px}
+thead th .ty{font-size:9.5px;color:rgba(255,255,255,.4);font-weight:400;letter-spacing:0}
+thead th .ar{font-size:10px;color:var(--accent-lite);font-weight:700}
+
+tbody td{
+  padding:6px 11px;border-bottom:1px solid var(--line-2);
+  vertical-align:middle;line-height:1.45;max-width:240px;
+}
+tbody tr:nth-child(even) td{background:#FBFAF8}
+tbody tr:hover td{background:#FFF1EC}
+tbody tr:hover td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+tbody tr:last-child td{border-bottom:1px solid var(--line)}
+
+td.num{font-family:var(--m);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:#000;font-weight:500;max-width:none}
+td.nul{color:#A9A29A;font-family:var(--m);font-size:11px;max-width:none}
+td.txt{line-height:1.45}
+td .clip{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:222px}
+td .more{color:var(--accent);font-family:var(--m);font-size:10px;margin-left:5px}
+mark{background:#FFD84D;color:#000;padding:0 1px;border-radius:2px;font-weight:600}
+
+/* ============ 底栏 ============ */
+.bottom{
+  background:var(--panel);border-top:2px solid var(--thead);
+  padding:8px 16px;display:flex;align-items:center;gap:10px;
+  font-size:12px;color:var(--ink-2);
+}
+.pg{display:flex;align-items:center;gap:2px}
+.pg button{
+  min-width:28px;height:26px;padding:0 7px;border-radius:3px;
+  color:var(--ink-2);font-family:var(--m);font-size:11.5px;font-weight:500;transition:.12s;
+}
+.pg button:hover:not(:disabled){background:var(--thead);color:#fff}
+.pg button:disabled{opacity:.3;cursor:default}
+.pg button.cur{background:var(--accent);color:#fff;font-weight:700}
+.pg .gap{color:var(--ink-3);padding:0 2px}
+.info{font-family:var(--m);font-size:10.5px;color:var(--ink-3)}
+
+/* ============ 详情抽屉 ============ */
+.drawer{position:fixed;inset:0;z-index:50;display:none}
+.drawer.on{display:block}
+.drawer .mask{position:absolute;inset:0;background:rgba(10,10,9,.35)}
+.drawer .pane{
+  position:absolute;right:0;top:0;bottom:0;width:min(860px,94vw);
+  background:var(--panel);border-left:1px solid var(--line);
+  display:flex;flex-direction:column;box-shadow:-8px 0 32px rgba(0,0,0,.1);
+}
+.drawer .hd{
+  padding:12px 18px;border-bottom:2px solid var(--thead);
+  display:flex;align-items:center;gap:10px;flex-shrink:0;
+}
+.drawer .hd .t{font-weight:700;font-size:13px}
+.drawer .hd .x{margin-left:auto;font-size:20px;color:var(--ink-3);line-height:1;padding:2px 6px}
+.drawer .hd .x:hover{color:var(--accent)}
+.drawer .bd{flex:1;overflow-y:auto;padding:14px 18px}
+.kv{display:grid;grid-template-columns:104px 1fr;gap:9px 14px;font-size:12.5px}
+.kv dt{color:var(--ink-3);font-family:var(--m);font-size:11px;padding-top:1px;text-align:right;line-height:1.5}
+.kv dd{color:var(--ink);word-break:break-word;white-space:pre-wrap;line-height:1.6;max-height:220px;overflow-y:auto}
+
+.empty{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:8px;color:var(--ink-3);
+}
+.empty .big{font-family:var(--m);font-size:24px;opacity:.3}
+.loading{position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent);opacity:0;transition:opacity .2s;z-index:5}
+.loading.on{opacity:1;animation:slide 1s infinite}
+@keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+
+@media (max-width:760px){
+  .row-brand{height:auto;flex-wrap:wrap;padding:8px 12px;gap:8px}
+  .search{width:100%;order:9}
+  .row-tabs,.row-chips{padding:0 12px}
+  .row-chips{padding:7px 12px}
+  tbody td,thead th button{font-size:12px}
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- 顶栏：品牌 + 面包屑 + 工具 -->
+  <div class="row-brand">
+    <div class="logo">
+      <span class="d"></span>技术标数据底座
+      <span class="n" id="tabCount">—</span>
+    </div>
+    <div class="spacer" id="crumb"></div>
+    <div class="search">
+      <input id="q" placeholder="在当前表中搜索…" autocomplete="off">
+      <span class="ic">⌕</span>
+    </div>
+    <select class="sel" id="size">
+      <option value="25">25 条/页</option>
+      <option value="50" selected>50 条/页</option>
+      <option value="100">100 条/页</option>
+      <option value="200">200 条/页</option>
+      <option value="500">500 条/页</option>
+    </select>
+    <button class="btn" id="reload">刷新</button>
+  </div>
+
+  <!-- 分组 Tab（一级导航） -->
+  <div class="row-tabs" id="tabs"></div>
+
+  <!-- 主体：侧栏（二级导航）+ 表格 -->
+  <div class="body">
+    <aside>
+      <div class="side-hd" id="sideHd">当前分组</div>
+      <div id="sideList"></div>
+    </aside>
+
+    <main>
+      <div class="tbl-wrap" id="wrap">
+        <div class="loading" id="ld"></div>
+        <table id="tbl">
+          <thead id="th"></thead>
+          <tbody id="tb"></tbody>
+        </table>
+        <div class="empty" id="empty" style="display:none">
+          <div class="big">∅</div>
+          <div id="emptyMsg">没有数据</div>
+        </div>
+      </div>
+
+      <div class="bottom">
+        <div class="pg" id="pg"></div>
+        <div class="info" id="info"></div>
+        <div class="spacer"></div>
+        <div class="info" id="range"></div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- 详情抽屉 -->
+<div class="drawer" id="dw">
+  <div class="mask" onclick="closeDw()"></div>
+  <div class="pane">
+    <div class="hd">
+      <span class="t" id="dwTitle">行详情</span>
+      <button class="x" onclick="closeDw()">×</button>
+    </div>
+    <div class="bd">
+      <dl class="kv" id="dwBody"></dl>
+      <!-- 关联数据单独放，不能放进 dl：dl 是 grid，会把关联块压成 104px -->
+      <div id="dwRel"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const S = {
+  schema: [], group: 0, table: null, cols: [], rows: [],
+  page: 1, size: 50, pages: 1, total: 0,
+  q: '', sort: null, dir: 'asc',
+};
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = n => n == null ? '—' : n.toLocaleString('zh-CN');
+const numFmt = v => Number.isInteger(v)
+  ? v.toLocaleString('zh-CN')
+  : v.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const cntFmt = n => n >= 10000 ? (n/1000).toFixed(1) + 'k' : String(n);
+
+function hl(text, q){
+  if (!q) return esc(text);
+  const i = text.toLowerCase().indexOf(q.toLowerCase());
+  if (i < 0) return esc(text);
+  return esc(text.slice(0,i)) + '<mark>' + esc(text.slice(i, i+q.length)) + '</mark>' + esc(text.slice(i+q.length));
+}
+
+/* ============ 启动 ============ */
+async function boot(){
+  const r = await fetch('/api/schema').then(r => r.json());
+  S.schema = r.groups;
+  $('tabCount').textContent = r.groups.reduce((a,g)=>a+g.tables.length,0) + ' 张表';
+
+  // hash: #g=0&t=xxx&row=1
+  const hp = new URLSearchParams(location.hash.slice(1));
+  const wantT = hp.get('t');
+  S.pendingRow = hp.get('row');   // 先存下来（pick 会重写 hash）
+  let gi = 0, ti = 0;
+  S.schema.forEach((g, i) => g.tables.forEach((t, j) => {
+    if (t.name === wantT) { gi = i; ti = j; }
+  }));
+  S.group = gi;
+  renderTabs();
+  renderSide();
+  pick(S.schema[gi].tables[ti].name);
+}
+
+/* ============ 分组 Tab ============ */
+function renderTabs(){
+  $('tabs').innerHTML = S.schema.map((g, i) => `
+    <button class="tab${i === S.group ? ' on' : ''}" data-g="${i}">
+      ${esc(g.group)}<span class="cnt">${g.tables.length}</span>
+    </button>`).join('');
+  $('tabs').querySelectorAll('.tab').forEach(b => {
+    b.onclick = () => {
+      S.group = +b.dataset.g;
+      renderTabs();
+      pick(S.schema[S.group].tables[0].name);
+    };
+  });
+}
+
+/* ============ 侧栏：固定全量菜单（分组可折叠） ============ */
+function renderSide(){
+  $('sideHd').textContent = '全部数据表';
+  $('sideList').innerHTML = S.schema.map((g, gi) => {
+    const open = gi === S.group;
+    return `
+    <div class="side-grp${open ? ' open' : ''}" data-g="${gi}">
+      <button class="side-grp-hd" data-g="${gi}">
+        <span class="arw">›</span>
+        <span class="gt">${esc(g.group)}</span>
+        <span class="gn">${g.tables.length}</span>
+      </button>
+      ${open ? `<div class="side-items">${g.tables.map(t => `
+        <button class="side-item${t.name === S.table ? ' on' : ''}" data-t="${esc(t.name)}">
+          <span class="nm">${esc(t.label)}</span>
+          ${t.kind === 'view' ? '<span class="v">视图</span>' : ''}
+          <span class="n">${cntFmt(t.rows)}</span>
+        </button>`).join('')}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  // 分组标题：展开并选第一张表
+  $('sideList').querySelectorAll('.side-grp-hd').forEach(b => {
+    b.onclick = () => {
+      const gi = +b.dataset.g;
+      if (gi === S.group) return;
+      S.group = gi;
+      renderTabs();
+      pick(S.schema[gi].tables[0].name);
+    };
+  });
+  // 表项
+  $('sideList').querySelectorAll('.side-item').forEach(b => {
+    b.onclick = () => pick(b.dataset.t);
+  });
+}
+
+/* ============ 选表 ============ */
+function pick(name){
+  S.table = name; S.page = 1; S.q = ''; S.sort = null; S.dir = 'asc';
+  $('q').value = '';
+  history.replaceState(null, '', `#g=${S.group}&t=${name}`);
+  renderSide();
+
+  const meta = S.schema.flatMap(g => g.tables).find(t => t.name === name);
+  if (meta){
+    S.cols = meta.cols;
+    $('crumb').innerHTML = `<span style="font-size:12.5px;color:var(--ink-2);font-weight:600">${esc(meta.label)}</span>
+      <span style="font-family:var(--m);font-size:10.5px;color:var(--ink-3);margin-left:8px">
+      ${meta.kind === 'view' ? '视图' : '数据表'} · ${fmt(meta.rows)} 行 · ${meta.cols.length} 列</span>`;
+  }
+  load();
+}
+
+/* ============ 加载 ============ */
+async function load(){
+  if (!S.table) return;
+  $('ld').classList.add('on');
+  const u = new URL('/api/rows', location.origin);
+  u.searchParams.set('t', S.table);
+  u.searchParams.set('p', S.page);
+  u.searchParams.set('s', S.size);
+  if (S.q) u.searchParams.set('q', S.q);
+  if (S.sort) { u.searchParams.set('sort', S.sort); u.searchParams.set('dir', S.dir); }
+
+  try {
+    const r = await fetch(u).then(r => r.json());
+    if (r.error) throw new Error(r.error);
+    S.rows = r.rows; S.total = r.total; S.pages = r.pages; S.cols = r.cols;
+    renderHead(); renderBody(); renderPager();
+    $('empty').style.display = r.rows.length ? 'none' : 'flex';
+    $('emptyMsg').textContent = S.q ? `没有匹配「${S.q}」的行` : '这张表暂无数据';
+
+    // 支持 #t=xxx&row=N 直接打开某行详情（可分享）
+    if (S.pendingRow !== null && S.pendingRow !== undefined && r.rows[+S.pendingRow]) {
+      const rp = +S.pendingRow;
+      S.pendingRow = null;
+      setTimeout(() => openDw(rp), 60);
+    }
+  } catch (e) {
+    $('tb').innerHTML = `<tr><td style="padding:20px;color:#C8371A">加载失败：${esc(e.message)}</td></tr>`;
+  } finally {
+    $('ld').classList.remove('on');
+  }
+}
+
+/* ============ 渲染表头 ============ */
+function renderHead(){
+  $('th').innerHTML = '<tr>' + S.cols.map(c => {
+    const on = S.sort === c.name;
+    return `<th><button data-c="${esc(c.name)}">
+      <span class="h">${esc(c.label || c.name)}${on ? `<span class="ar">${S.dir === 'asc' ? '↑' : '↓'}</span>` : ''}</span>
+      <span class="ty">${esc(c.type_cn || '')}</span>
+    </button></th>`;
+  }).join('') + '</tr>';
+  $('th').querySelectorAll('button').forEach(b => {
+    b.onclick = () => {
+      const c = b.dataset.c;
+      if (S.sort === c) S.dir = S.dir === 'asc' ? 'desc' : 'asc';
+      else { S.sort = c; S.dir = 'asc'; }
+      S.page = 1; load();
+    };
+  });
+}
+
+/* ============ 渲染表体 ============ */
+function renderBody(){
+  const q = S.q;
+  $('tb').innerHTML = S.rows.map((row, ri) => '<tr>' + row.map((v, ci) => {
+    if (v === null || v === undefined) return '<td class="nul">—</td>';
+    if (typeof v === 'object' && v.trunc)
+      return `<td class="txt" data-r="${ri}"><span class="clip">${hl(v.t, q)}</span><span class="more">+${v.trunc}</span></td>`;
+    if (typeof v === 'object') return `<td class="nul">[${v.b ?? '?'} 字节]</td>`;
+    if (typeof v === 'number') return `<td class="num">${numFmt(v)}</td>`;
+    return `<td class="txt" data-r="${ri}"><span class="clip">${hl(String(v), q)}</span></td>`;
+  }).join('') + '</tr>').join('');
+  $('tb').querySelectorAll('td[data-r]').forEach(td => {
+    td.onclick = () => openDw(+td.dataset.r);
+  });
+}
+
+/* ============ 分页 ============ */
+function renderPager(){
+  const p = S.page, n = S.pages;
+  let html = `<button data-p="${p-1}" ${p<=1?'disabled':''}>‹</button>`;
+  const win = [];
+  for (let i = 1; i <= n; i++) if (i===1 || i===n || Math.abs(i-p)<=1) win.push(i);
+  let prev = 0;
+  win.forEach(i => {
+    if (prev && i - prev > 1) html += `<span class="gap">…</span>`;
+    html += `<button data-p="${i}" ${i===p?'class="cur"':''}>${i}</button>`;
+    prev = i;
+  });
+  html += `<button data-p="${p+1}" ${p>=n?'disabled':''}>›</button>`;
+  $('pg').innerHTML = html;
+  $('pg').querySelectorAll('button[data-p]').forEach(b => {
+    b.onclick = () => {
+      const i = +b.dataset.p;
+      if (i < 1 || i > n || i === S.page) return;
+      S.page = i; load();
+    };
+  });
+  $('info').textContent = `第 ${p} / ${n} 页 · 共 ${fmt(S.total)} 行`;
+  const from = S.total ? (p-1)*S.size + 1 : 0;
+  $('range').textContent = S.total ? `第 ${fmt(from)}–${fmt(Math.min(p*S.size, S.total))} 行` : '';
+}
+
+/* ============ 详情抽屉 ============ */
+const FILE_FIELDS = ['local_path', 'pdf_path'];
+const PREVIEWABLE = /\.(pdf|png|jpe?g|gif|webp|svg|txt|json|csv)$/i;
+
+function openDw(ri){
+  const row = S.rows[ri];
+  if (!row) return;
+  const tLabel = (S.schema.flatMap(g => g.tables).find(t => t.name === S.table) || {}).label || S.table;
+  $('dwTitle').textContent = `${tLabel} · 第 ${(S.page-1)*S.size + ri + 1} 行`;
+
+  $('dwBody').innerHTML = S.cols.map((c, i) => {
+    let v = row[i];
+    if (v === null || v === undefined) v = '—';
+    else if (typeof v === 'object' && v.trunc) v = v.t + ' …（原长 ' + (v.t.length + v.trunc) + ' 字）';
+    else if (typeof v === 'object') v = `[二进制 ${v.b} 字节]`;
+    else if (typeof v === 'number') v = numFmt(v);
+    const label = c.label || c.name;
+    const raw = row[i];
+    let extra = '';
+
+    // 本地文件：给预览/下载入口
+    if (FILE_FIELDS.includes(c.name) && typeof raw === 'string' && raw) {
+      const u = '/api/file?p=' + encodeURIComponent(raw);
+      extra = `<div class="file-ops">
+        ${PREVIEWABLE.test(raw) ? `<button data-pv="${esc(u)}">预览</button>` : ''}
+        <a href="${esc(u)}" target="_blank" rel="noopener">打开原文 ↗</a>
+        <span class="fsize" data-sz="${esc(raw)}"></span>
+      </div>`;
+    }
+    // 原文链接
+    if (c.name === 'origin_url' && typeof raw === 'string' && /^https?:/.test(raw)) {
+      extra = `<div class="file-ops"><a href="${esc(raw)}" target="_blank" rel="noopener">在浏览器打开 ↗</a></div>`;
+    }
+    return `<dt title="${esc(c.name)}">${esc(label)}</dt><dd>${esc(String(v))}${extra}</dd>`;
+  }).join('');
+
+  $('dw').classList.add('on');
+
+  // 预览按钮 → iframe 嵌入
+  $('dwBody').querySelectorAll('button[data-pv]').forEach(b => {
+    b.onclick = () => {
+      const old = $('dwBody').querySelector('.pv-box');
+      if (old) old.remove();
+      const box = document.createElement('div');
+      box.className = 'pv-box';
+      box.innerHTML = `<iframe src="${b.dataset.pv}" loading="lazy"></iframe>
+        <div class="pv-hd"><span>文件预览</span><button class="pv-x">关闭预览</button></div>`;
+      $('dwBody').prepend(box);
+      box.querySelector('.pv-x').onclick = () => box.remove();
+      box.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    };
+  });
+
+  // 异步查文件大小/是否存在
+  $('dwBody').querySelectorAll('[data-sz]').forEach(async el => {
+    try {
+      const r = await fetch('/api/fileinfo?p=' + encodeURIComponent(el.dataset.sz)).then(r => r.json());
+      el.textContent = r.exists
+        ? `${(r.size/1048576).toFixed(1)} MB`
+        : '文件不在本地';
+      if (!r.exists) el.classList.add('miss');
+    } catch { el.textContent = ''; }
+  });
+
+  // 异步加载关联数据
+  $('dwRel').innerHTML = '';
+  loadRelated(row);
+}
+
+/* ============ 关联数据 ============ */
+const KEY_FIELD = {
+  announcement: 'guid',
+  attachment: 'attach_guid',
+  tender_doc: 'attach_guid',
+  bid_body_result: 'announcement_guid',
+  bid_boq_item: 'project',
+};
+
+/* 单元格 JSON → 可读文本：[["1.3","中标候选人排序方法"]] → 1.3 / 中标候选人排序方法 */
+function prettyCell(s){
+  if (typeof s !== 'string' || !s.trim().startsWith('[')) return s;
+  try {
+    const arr = JSON.parse(s);
+    const flat = [];
+    const walk = x => Array.isArray(x) ? x.forEach(walk) : (x != null && String(x).trim() && flat.push(String(x).trim()));
+    walk(arr);
+    return flat.join(' / ') || s;
+  } catch { return s; }
+}
+
+async function loadRelated(row){
+  const kf = KEY_FIELD[S.table];
+  if (!kf) return;
+  const idx = S.cols.findIndex(c => c.name === kf);
+  if (idx < 0) return;
+  const key = row[idx];
+  if (!key) return;
+
+  const box = document.createElement('div');
+  box.className = 'rel-block';
+  box.innerHTML = '<div class="rel-loading">加载关联数据…</div>';
+  $('dwRel').appendChild(box);
+
+  try {
+    const r = await fetch(`/api/related?t=${encodeURIComponent(S.table)}&k=${encodeURIComponent(key)}`).then(r => r.json());
+    if (!r.groups.length) { box.remove(); return; }
+    box.innerHTML = r.groups.map(g => `
+      <div class="rel-grp">
+        <div class="rel-hd">
+          <span class="rt">${esc(g.rel)}</span>
+          <span class="rn">${g.total} 条${g.total > g.rows.length ? ` · 显示前 ${g.rows.length} 条` : ''}</span>
+          <button class="rj" data-tb="${esc(g.table)}">在表中查看 →</button>
+        </div>
+        <div class="rel-tbl-wrap">
+          <table class="rel-tbl">
+            <thead><tr>${g.cols.map(c => `<th>${esc(c.label)}</th>`).join('')}</tr></thead>
+            <tbody>${g.rows.map(row => '<tr>' + row.map((v, ci) => {
+              const cn = g.cols[ci]?.name;
+              if (v === null || v === undefined) return '<td class="nul">—</td>';
+              if (typeof v === 'object' && v.trunc) return `<td class="wide" title="${esc(v.t)}">${esc(v.t)}…</td>`;
+              if (typeof v === 'number') return `<td class="num">${numFmt(v)}</td>`;
+              // 文件路径 → 可点
+              if (cn === 'local_path' && typeof v === 'string' && v) {
+                return `<td><a class="flink" href="/api/file?p=${encodeURIComponent(v)}" target="_blank" rel="noopener">${esc(v.split('/').pop().slice(0,26))} ↗</a></td>`;
+              }
+              const s = prettyCell(String(v));
+              // 长文本（如单元格 JSON）单独样式、可折行
+              return `<td class="${s.length > 40 ? 'wide' : 'txt'}">${esc(s)}</td>`;
+            }).join('') + '</tr>').join('')}</tbody>
+          </table>
+        </div>
+      </div>`).join('');
+
+    // “在表中查看” → 切换到对应表并搜索当前 key
+    box.querySelectorAll('.rj').forEach(b => {
+      b.onclick = () => {
+        const t = b.dataset.tb;
+        const meta = S.schema.flatMap(g => g.tables).find(tb => tb.name === t);
+        if (!meta) return;
+        const gi = S.schema.findIndex(g => g.tables.some(tb => tb.name === t));
+        if (gi >= 0) { S.group = gi; renderTabs(); }
+        closeDw();
+        S.table = t; S.page = 1; S.sort = null; S.dir = 'asc';
+        history.replaceState(null, '', `#g=${S.group}&t=${t}`);
+        renderSide();
+        $('q').value = key;
+        S.q = key;
+        load();
+      };
+    });
+  } catch (e) {
+    box.innerHTML = `<div class="rel-loading">关联数据加载失败：${esc(e.message)}</div>`;
+  }
+}
+function closeDw(){ $('dw').classList.remove('on'); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDw(); });
+
+/* ============ 交互 ============ */
+let tq;
+$('q').oninput = e => {
+  clearTimeout(tq);
+  tq = setTimeout(() => { S.q = e.target.value.trim(); S.page = 1; load(); }, 280);
+};
+$('size').onchange = e => { S.size = +e.target.value; S.page = 1; load(); };
+$('reload').onclick = () => load();
+
+boot();
+</script>
+</body>
+</html>
