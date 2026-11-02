@@ -34,10 +34,17 @@ const SAMPLE: Record<string, string> = {
 };
 
 function sampleOf(kind: string, pattern: string): string {
+  if (kind === 'volume') return ''; // 章节级证据由 FILLER 单独补足字数
   if (kind === 'cite' || kind === 'regex') return SAMPLE[pattern] ?? pattern;
   if (kind === 'number') return `${pattern} 12000`;
   return pattern;
 }
+
+/** 章节级证据的填充正文：约 640 字，覆盖最高的 volume 门槛（500） */
+const FILLER =
+  '本节按规范要求编制，逐项说明实施思路、过程控制与责任分工，并明确检查节点与记录要求。'.repeat(
+    14,
+  );
 
 const { ruleset } = loadRules();
 if (!ruleset) {
@@ -46,6 +53,8 @@ if (!ruleset) {
 }
 
 const topicIds = [...new Set(ruleset.checks.map((c) => c.topicId))];
+/** 叶子章节：没有子章节的 topic。partial 只删叶子——父级章节被删会让“父级累加”逻辑失去意义 */
+const leafIds = topicIds.filter((id) => !ruleset.topics.some((t) => t.parent === id));
 const nameOf = (id: string): string => ruleset.topics.find((t) => t.id === id)?.name ?? id;
 const checksOf = (id: string): Check[] => ruleset.checks.filter((c) => c.topicId === id);
 
@@ -55,24 +64,35 @@ mkdirSync(OUT, { recursive: true });
 const full: string[] = ['# 施工组织设计', ''];
 for (const id of topicIds) {
   full.push(`## ${nameOf(id)}`, '');
-  for (const c of checksOf(id)) {
-    const ev = c.evidence.map((e) => sampleOf(e.kind, e.pattern)).join('，');
+  const cks = checksOf(id);
+  for (const c of cks) {
+    const ev = c.evidence
+      .filter((e) => e.kind !== 'volume')
+      .map((e) => sampleOf(e.kind, e.pattern))
+      .join('，');
     // 不把 check.title 写进正文：标题词不等于实质内容，写进去会把空话标也测成全覆盖
-    full.push(`本工程将${ev}纳入总体部署，并在实施过程中动态调整。`, '');
+    if (ev) full.push(`本工程将${ev}纳入总体部署，并在实施过程中动态调整。`, '');
   }
+  // 章节级规则：补足正文字数，否则 L1 会因字数不够而判 mentioned
+  if (cks.some((c) => c.evidence.some((e) => e.kind === 'volume'))) full.push(FILLER, '');
 }
 writeFileSync(join(OUT, 'full.md'), full.join('\n'), 'utf8');
 
-// ---- partial：去掉前 2 章，第 3 章只留标题 ----
+// ---- partial：去掉前 2 个叶子章节，第 3 个只留标题 ----
 const partial: string[] = ['# 施工组织设计', ''];
-topicIds.forEach((id, idx) => {
+leafIds.forEach((id, idx) => {
   if (idx < 2) return; // 整章缺失
   partial.push(`## ${nameOf(id)}`, '');
   if (idx === 2) return; // 只有标题、没有正文
-  for (const c of checksOf(id)) {
-    const ev = c.evidence.map((e) => sampleOf(e.kind, e.pattern)).join('，');
-    partial.push(`本工程将${ev}纳入总体部署，并在实施过程中动态调整。`, '');
+  const cks = checksOf(id);
+  for (const c of cks) {
+    const ev = c.evidence
+      .filter((e) => e.kind !== 'volume')
+      .map((e) => sampleOf(e.kind, e.pattern))
+      .join('，');
+    if (ev) partial.push(`本工程将${ev}纳入总体部署，并在实施过程中动态调整。`, '');
   }
+  if (cks.some((c) => c.evidence.some((e) => e.kind === 'volume'))) partial.push(FILLER, '');
 });
 writeFileSync(join(OUT, 'partial.md'), partial.join('\n'), 'utf8');
 

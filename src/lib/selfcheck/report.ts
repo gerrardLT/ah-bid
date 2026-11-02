@@ -42,6 +42,31 @@ const STATE_CN: Record<Diagnosis['state'], string> = {
   missing: '缺失',
 };
 
+/**
+ * 评分项的评分维度。
+ *
+ * 为什么需要：评分表里大量条目不是技术标（报价算法、信用分、排序程序、表头行）。
+ * 把它们都列进“未匹配评分项”，会让报告看起来永远“全部对不上”——
+ * 实测 9 条“未匹配”里 8 条根本不是技术标。
+ */
+export type Dimension = '技术' | '报价' | '商务信用' | '程序/噪声';
+
+export function dimensionOf(text: string): Dimension {
+  const t = text.replace(/\s+/g, '');
+  // 表头行、极短碎片
+  if (/^(条款号|评审因素|评分因素|序号|评分项)/.test(t) || t.length < 12) return '程序/噪声';
+  if (
+    /报价|基准价|下浮|费率|总价|价格分|得分计算|评标价|偏差率|算术平均|[CXYAK]\s*值|抽取系数|区间/.test(
+      t,
+    )
+  ) {
+    return '报价';
+  }
+  if (/信誉|信用|业绩|奖项|资质|认证|财务|不良行为/.test(t)) return '商务信用';
+  if (/排序方法|推荐顺序|评审程序|评标委员会抽取|定标/.test(t)) return '程序/噪声';
+  return '技术';
+}
+
 /** 评分项 → 检查项：只认「标题或别名被评分项原文包含」，最长匹配优先 */
 export function matchOneCheck(text: string, checks: Check[]): Check | null {
   let best: Check | null = null;
@@ -84,7 +109,13 @@ function rankOf(d: Diagnosis): number {
 export function renderMarkdown(input: ReportInput): string {
   const { bid, ruleset, result, tender } = input;
   const t = tally(result.diagnoses);
-  const matched = matchScoreItems(input);
+  // 只看技术类：报价/信用/程序项不属本工具范围，不当作盲区
+  const techItems = input.scoreItems.filter((it) => dimensionOf(it.text) === '技术');
+  const others = input.scoreItems.length - techItems.length;
+  const matched = techItems.map((item) => ({
+    item,
+    check: matchOneCheck(item.text, ruleset.checks),
+  }));
   const unmatched = matched.filter((m) => !m.check);
   const out: string[] = [];
 
@@ -96,27 +127,33 @@ export function renderMarkdown(input: ReportInput): string {
       (bid.unsegmented ? '（**未识别出任何标题，结论可靠性下降**）' : ''),
   );
   out.push(
-    `> 依据：本项目评分项 ${input.scoreItems.length} 条（其中 ${input.scoreItems.length - unmatched.length} 条能对到规则）` +
+    `> 依据：本项目技术标类评分项 ${techItems.length} 条（其中 ${techItems.length - unmatched.length} 条能对到规则）` +
       `、通用检查项 ${ruleset.checks.length} 条｜规则版本 \`${ruleset.hash}\``,
   );
+  if (others > 0) {
+    out.push(
+      `> 另有 ${others} 条报价/商务/程序类评分项，不属本工具范围（报价请用技术标材料包的 03-报价基准）。`,
+    );
+  }
   out.push(
     `> 档位为「**证据条数推定**」，不是评委打分；每一条“已覆盖”都附原文行号，可逐条核对。`,
   );
   out.push('');
 
   // 评分项过少 = 评分表没被完整识别，下面的“未匹配清单”会失真，必须置顶提醒
-  if (input.tender && input.scoreItems.length < 8) {
+  if (input.tender && techItems.length < 8) {
     out.push(
-      `> ⚠ **本项目只抽取到 ${input.scoreItems.length} 条评分项**（常规 15\u201340 条），` +
-        `评分表可能未被完整识别。下方“未匹配评分项”清单不可信，**请直接查阅招标文件评标办法章节**。`,
+      `> ⚠ **本项目评分项共 ${input.scoreItems.length} 条，其中技术标类仅 ${techItems.length} 条**` +
+        `（常规 15\u201340 条），评分表可能未被完整识别。` +
+        `下方“未匹配评分项”清单不可信，**请直接查阅招标文件评标办法章节**。`,
     );
     out.push('');
   }
 
   if (unmatched.length) {
-    out.push(`## 一、未匹配的评分项（${unmatched.length} 条，需人工对照）`);
+    out.push(`## 一、未匹配的技术标评分项（${unmatched.length} 条，需人工对照）`);
     out.push('');
-    out.push('> 这些是本项目评分表里的具体要求，但规则库里还没有对应检查项。');
+    out.push('> 这些是本项目评分表里的技术标要求，但规则库里还没有对应检查项。');
     out.push('> 它们的缺失不会被下面的诊断发现 —— **这是本报告最大的盲区**。');
     out.push('');
     out.push('| 页码 | 评分项原文 |');
@@ -165,12 +202,19 @@ export function renderMarkdown(input: ReportInput): string {
       const topic = ruleset.topics.find((x) => x.id === d.topicId);
       const advice = d.rejectRisk
         ? '**废标风险，优先补**'
-        : d.state === 'mentioned'
-          ? '补量化证据（数量/型号/规范号）'
-          : '整段缺失';
+        : d.bodyChars !== undefined
+          ? '章节太薄，补实质内容'
+          : d.state === 'mentioned'
+            ? '补量化证据（数量/型号/规范号）'
+            : '整段缺失';
+      // 章节级检查不说“缺什么词”，而说“正文多少字”
+      const missingText =
+        d.bodyChars !== undefined
+          ? `正文 ${d.bodyChars} 字（未达门槛）`
+          : d.missing.join('；') || '—';
       out.push(
         `| ${esc(topic?.name ?? d.topicId)} | ${esc(d.title)} | ${STATE_CN[d.state]} | ` +
-          `${esc(d.missing.join('；') || '—')} | ${advice} |`,
+          `${esc(missingText)} | ${advice} |`,
       );
     }
     if (problems.length > 60) out.push(`| … | 还有 ${problems.length - 60} 条 | | | |`);
@@ -266,9 +310,11 @@ export function buildJson(input: ReportInput): unknown {
       rejectRisk: d.rejectRisk,
       hits: d.hits.map((h) => ({ kind: h.kind, pattern: h.pattern, line: h.line + 1, snippet: h.snippet })),
       missing: d.missing,
+      bodyChars: d.bodyChars,
     })),
-    unmatchedScoreItems: matchScoreItems(input)
-      .filter((m) => !m.check)
-      .map((m) => ({ page: m.item.page, text: m.item.text })),
+    unmatchedScoreItems: input.scoreItems
+      .filter((it) => dimensionOf(it.text) === '技术')
+      .filter((it) => !matchOneCheck(it.text, input.ruleset.checks))
+      .map((it) => ({ page: it.page, text: it.text })),
   };
 }

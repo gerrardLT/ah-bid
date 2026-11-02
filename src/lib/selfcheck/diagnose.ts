@@ -22,6 +22,7 @@ import type {
   EvidenceHit,
   Ruleset,
   Tier,
+  Topic,
 } from './types.ts';
 
 export interface DiagnoseOptions {
@@ -43,16 +44,32 @@ export interface DiagnoseResult {
 interface TopicSpan {
   topicId: string;
   sections: string[];
+  /** 各段全文（含标题行），用于计算正文字数 */
+  texts: string[];
   fromLine: number;
   toLine: number;
   /** 是否找到章节 */
   found: boolean;
+  /** 去标题行、去空白后的正文字数 */
+  bodyChars: number;
 }
 
-function buildTopicSpans(doc: BidDoc, topicIds: string[]): Map<string, TopicSpan> {
+function buildTopicSpans(
+  doc: BidDoc,
+  topicIds: string[],
+  allTopics: Topic[],
+): Map<string, TopicSpan> {
   const spans = new Map<string, TopicSpan>();
   for (const id of topicIds) {
-    spans.set(id, { topicId: id, sections: [], fromLine: 0, toLine: doc.lines.length - 1, found: false });
+    spans.set(id, {
+      topicId: id,
+      sections: [],
+      texts: [],
+      fromLine: 0,
+      toLine: doc.lines.length - 1,
+      found: false,
+      bodyChars: 0,
+    });
   }
   for (const s of doc.sections) {
     if (!s.topicId) continue;
@@ -60,16 +77,41 @@ function buildTopicSpans(doc: BidDoc, topicIds: string[]): Map<string, TopicSpan
     if (!sp) continue;
     sp.found = true;
     sp.sections.push(s.title);
+    sp.texts.push(s.text);
     sp.fromLine = Math.min(sp.fromLine, s.startLine);
     sp.toLine = Math.max(sp.toLine, s.endLine);
   }
-  // 找不到章节的 topic 退回全文（宁可多查，不可漏判），但保留 found=false 供报告说明
   for (const sp of spans.values()) {
     if (!sp.found) {
+      // 找不到章节的 topic 退回全文（宁可多查，不可漏判），但保留 found=false 供报告说明
       sp.fromLine = 0;
       sp.toLine = doc.lines.length - 1;
+    } else {
+      // 正文 = 去掉每段第一行（标题）后，去掉所有空白
+      const body = sp.texts.map((t) => t.split('\n').slice(1).join('\n')).join('\n');
+      sp.bodyChars = body.replace(/\s/g, '').length;
     }
   }
+
+  // 父章节的体量 = 自身 + 所有直接子章节。
+  // 为什么需要：评分表在父级打分（「施工组织设计 20 分」），而标书往往只写子章节（编制依据/工程概况…），
+  // 父标题不一定存在。不累加的话，父级规则会因为“自己那段是空的”而误判为无内容。
+  const childrenOf = new Map<string, string[]>();
+  for (const t of allTopics) {
+    if (!t.parent) continue;
+    const arr = childrenOf.get(t.parent) ?? [];
+    arr.push(t.id);
+    childrenOf.set(t.parent, arr);
+  }
+  for (const [pid, kids] of childrenOf) {
+    const sp = spans.get(pid);
+    if (!sp) continue;
+    for (const k of kids) {
+      const ch = spans.get(k);
+      if (ch) sp.bodyChars += ch.bodyChars;
+    }
+  }
+
   return spans;
 }
 
@@ -85,11 +127,28 @@ function buildTopicSpans(doc: BidDoc, topicIds: string[]): Map<string, TopicSpan
  */
 function matchOne(
   doc: BidDoc,
-  checkId: string,
+  check: Check,
   ev: Evidence,
-  from: number,
-  to: number,
+  span: TopicSpan | undefined,
 ): EvidenceHit | null {
+  // 章节级检查：不看词，看这一章有没有实质内容。
+  // 章节不存在或只有标题行时 bodyChars≈0，自然不命中 → 上层判 missing / mentioned。
+  if (ev.kind === 'volume') {
+    const chars = span?.bodyChars ?? 0;
+    if (chars >= (ev.minChars ?? 0)) {
+      return {
+        checkId: check.id,
+        kind: 'volume',
+        pattern: ev.pattern,
+        line: span?.fromLine ?? 0,
+        snippet: `本章节正文 ${chars} 字（门槛 ${ev.minChars}）`,
+      };
+    }
+    return null;
+  }
+
+  const from = span?.fromLine ?? 0;
+  const to = span?.toLine ?? doc.lines.length - 1;
   const end = Math.min(to, doc.lines.length - 1);
   for (let i = Math.max(0, from); i <= end; i++) {
     const line = doc.lines[i];
@@ -107,7 +166,7 @@ function matchOne(
 
     const idx = Math.max(0, (m.index ?? 0) - 20);
     return {
-      checkId,
+      checkId: check.id,
       kind: ev.kind,
       pattern: ev.pattern,
       line: i,
@@ -134,7 +193,7 @@ export function diagnose(
   const budget = opts.ruleBudgetMs ?? 50;
 
   const topicIds = [...new Set(ruleset.checks.map((c) => c.topicId))];
-  const spans = buildTopicSpans(doc, topicIds);
+  const spans = buildTopicSpans(doc, topicIds, ruleset.topics);
   const foundTopics = [...spans.values()].filter((s) => s.found).length;
 
   const diagnoses: Diagnosis[] = [];
@@ -156,7 +215,7 @@ export function diagnose(
     const hits: EvidenceHit[] = [];
     const missing: string[] = [];
     for (const ev of check.evidence) {
-      const hit = matchOne(doc, check.id, ev, span?.fromLine ?? 0, span?.toLine ?? doc.lines.length - 1);
+      const hit = matchOne(doc, check, ev, span);
       if (hit) hits.push(hit);
       else missing.push(`${ev.kind}:${ev.pattern}`);
       if (Date.now() - t0 > budget) {
@@ -180,6 +239,9 @@ export function diagnose(
       tier: pickTier(hits.length, ruleset.tiers[check.id]),
       rejectRisk: check.rejectIfMissing && hits.length === 0,
       section: span?.found ? (span.sections[0] ?? null) : null,
+      bodyChars: check.evidence.some((e) => e.kind === 'volume')
+        ? (span?.bodyChars ?? 0)
+        : undefined,
     });
   }
 

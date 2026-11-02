@@ -119,3 +119,15 @@ BZ-REJECT-07,BZ-REJECT,项目经理证书,建造师,term:建造师,1,skeleton:�
 BZ-REJECT-08,BZ-REJECT,类似业绩证明,业绩,term:业绩,1,skeleton:废标条款常规项,2026-11-02,缺即否决
 BZ-REJECT-09,BZ-REJECT,财务报告,财务报告,term:财务报告,1,skeleton:废标条款常规项,2026-11-02,缺即否决
 BZ-REJECT-10,BZ-REJECT,无行贿犯罪记录,行贿犯罪,term:行贿犯罪,1,skeleton:废标条款常规项,2026-11-02,缺即否决
+L1-SG-BASIS,SG-BASIS,编制依据,编制依据|编制说明|依据文件|遵循规范,volume:300,0,skeleton:L1 章节级,2026-11-02,章节级：整章正文至少 300 字
+L1-SG-OVERVIEW,SG-OVERVIEW,工程概况,工程概况|项目概况|工程简介|项目概述,volume:300,0,skeleton:L1 章节级,2026-11-02,章节级：整章正文至少 300 字
+L1-SG-DEPLOY,SG-DEPLOY,施工部署,施工部署|总体部署|施工组织安排,volume:300,0,skeleton:L1 章节级,2026-11-02,章节级：整章正文至少 300 字
+L1-SG-SCHEDULE,SG-SCHEDULE,施工进度计划,施工进度计划|进度计划|工期计划|施工计划|总进度,volume:300,0,skeleton:L1 章节级,2026-11-02,章节级：整章正文至少 300 字
+L1-SG-RESOURCE,SG-RESOURCE,施工准备与资源配置,施工准备|资源配置|资源配备|劳动力计划|机械配置,volume:300,0,skeleton:L1 章节级,2026-11-02,章节级：整章正文至少 300 字
+L1-SG-METHOD,SG-METHOD,主要施工方法,主要施工方法|施工方法|施工工艺|主要工序|施工技术,volume:300,0,skeleton:L1 章节级,2026-11-02,章节级：整章正文至少 300 字
+L1-SG-SITE,SG-SITE,施工现场平面布置,施工现场平面布置|施工平面布置|平面布置|总平面布置|施工总平面,volume:300,0,skeleton:L1 章节级,2026-11-02,章节级：整章正文至少 300 字
+L1-SG-MGMT,SG-MGMT,主要施工管理计划,施工管理计划|管理计划|质量保证措施|安全管理措施|质量安全,volume:300,0,skeleton:L1 章节级,2026-11-02,章节级：整章正文至少 300 字
+L1-DS-SCHEME,DS-SCHEME,设计方案,设计方案|设计构思|设计说明|设计理念,volume:500,0,skeleton:L1 章节级,2026-11-02,章节级：整章正文至少 500 字
+L1-SV-PLAN,SV-PLAN,监理大纲,监理大纲|监理方案|监理规划|监理细则,volume:500,0,skeleton:L1 章节级,2026-11-02,章节级：整章正文至少 500 字
+L1-SV-SERVICE,SV-SERVICE,服务方案,服务方案|服务承诺|售后服务|保障方案,volume:300,0,skeleton:L1 章节级,2026-11-02,章节级：整章正文至少 300 字
+L1-SG-ROOT,SG-ROOT,施工组织设计,施工组织设计|技术标|技术文件,volume:2000,0,skeleton:L1 章节级,2026-11-02,章节级：评分表通常在父级打分（施工组织设计 20 分），此条负责匹配与整章体量判断

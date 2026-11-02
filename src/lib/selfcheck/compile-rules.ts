@@ -18,7 +18,7 @@ import { join } from 'node:path';
 
 import type { Check, Evidence, EvidenceKind, Ruleset, Tier, Topic } from './types.ts';
 
-const EVIDENCE_KINDS = new Set(['term', 'number', 'section', 'cite', 'regex']);
+const EVIDENCE_KINDS = new Set(['term', 'number', 'section', 'cite', 'regex', 'volume']);
 
 /** 允许的项目类型。新增类型时同步这里与 rules/v1/topics.csv。 */
 export const ALLOWED_APPLIES_TO = new Set([
@@ -101,6 +101,17 @@ export function compileEvidence(raw: string): Evidence {
   if (!pattern) throw new Error(`证据 pattern 为空：「${raw}」`);
   if (NESTED_QUANT.test(pattern)) {
     throw new Error(`证据含嵌套量词，可能回溯爆炸：「${pattern}」`);
+  }
+
+  // volume：章节级检查——「这一章到底有没有实质内容」。
+  // 为什么需要它：评分表在章节级打分（「施工组织设计 20 分」），
+  // 而 term 类证据都是内容级（「塔吊」），两者对不上。
+  if (kind === 'volume') {
+    const min = Number(pattern);
+    if (!Number.isInteger(min) || min <= 0) {
+      throw new Error(`volume 后应为正整数（章节最小字数），实际「${pattern}」`);
+    }
+    return { kind: 'volume', pattern, re: /$^/, label: `正文≥${min}字`, minChars: min };
   }
 
   let re: RegExp;

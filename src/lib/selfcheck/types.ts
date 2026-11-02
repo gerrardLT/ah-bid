@@ -7,16 +7,18 @@
  * - 代码里不出现项目类型字面量（房建/市政…），类型只以 appliesTo 数据字段存在
  */
 
-export type EvidenceKind = 'term' | 'number' | 'section' | 'cite' | 'regex';
+export type EvidenceKind = 'term' | 'number' | 'section' | 'cite' | 'regex' | 'volume';
 
 export interface Evidence {
   kind: EvidenceKind;
   /** 原始 pattern（CSV 里写的） */
   pattern: string;
-  /** 编译后的正则；term/section 已转义，number 追加了"附近有数字"的约束 */
+  /** 编译后的正则；term/section 已转义，number 追加了"附近有数字"的约束；volume 用永不匹配的占位 */
   re: RegExp;
   /** 报告里显示的名字，默认等于 pattern */
   label: string;
+  /** 仅 volume：该章节正文字数下限 */
+  minChars?: number;
 }
 
 export interface Check {
@@ -92,4 +94,6 @@ export interface Diagnosis {
   rejectRisk: boolean;
   /** 命中的章节标题；null 表示该 topic 在文中没找到 */
   section: string | null;
+  /** 仅章节级检查（volume）：该章节去标题、去空白后的实际正文字数 */
+  bodyChars?: number;
 }
