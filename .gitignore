@@ -22,4 +22,9 @@ data/*.run
 data/*-samples.json
 data/*-recall.md
 data/_*.ts
+data/_*.msg
 data/__pycache__/
+
+# Python 编译缓存，任何目录下都不入库
+__pycache__/
+*.pyc

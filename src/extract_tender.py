@@ -348,7 +348,7 @@ def extract_facts(pages: list[str]) -> dict:
     }
 
 
-def extract_scoring_tables(doc: fitz.Document, chapter: list[int]) -> list[dict]:
+def extract_scoring_tables(doc: fitz.Document, chapter: list[int], max_cell: int = 200) -> list[dict]:
     """
     取指定页范围内表头含“分值/评分/评审因素”的表格。
     只传章节页，不传全书 ——— 一本 200 页的招标文件有 200+ 个表，全扫既慢又噪。
@@ -386,7 +386,7 @@ def extract_scoring_tables(doc: fitz.Document, chapter: list[int]) -> list[dict]
                     {
                         "page": pno,
                         "header": last_header,
-                        "rows": [[str(c or "").strip()[:200] for c in r] for r in rows[1:40]],
+                        "rows": [[str(c or "").strip()[:max_cell] for c in r] for r in rows[1:40]],
                     }
                 )
             elif (
@@ -400,7 +400,7 @@ def extract_scoring_tables(doc: fitz.Document, chapter: list[int]) -> list[dict]
                     {
                         "page": pno,
                         "header": last_header,
-                        "rows": [[str(c or "").strip()[:200] for c in r] for r in rows[:40]],
+                        "rows": [[str(c or "").strip()[:max_cell] for c in r] for r in rows[:40]],
                         "continued": True,
                     }
                 )
@@ -511,9 +511,45 @@ def main() -> None:
 
     path = sys.argv[1]
     pretty = "--pretty" in sys.argv
+    scoring_only = "--scoring-only" in sys.argv
     doc = fitz.open(path)
     try:
         pages = page_texts(doc)
+
+        if scoring_only:
+            # 只抽「评标办法」章节的评分表，单元格上限放宽到 1200 字（普通模式仍是 200）。
+            # 为什么分开：现有 scoring_item 的消费者（tech-bid-scoring）按 200 字长度解析，
+            # 突然变长会改变它已有的输出；而档位判断需要完整原文，所以走独立通道。
+            chapter = chapter_pages(pages, SECTION_PATTERNS["评标办法"]) or find_pages(
+                pages, SECTION_PATTERNS["评标办法"]
+            )
+            tables = extract_scoring_tables(doc, chapter, max_cell=1200)
+            seen_names = set()
+            for t in tables:
+                for r in t.get("rows") or []:
+                    for c in r:
+                        seen_names.add(re.sub(r"\s+", "", str(c or "")))
+            para = [
+                p for p in extract_paragraph_scoring(pages, chapter) if p["name"] not in seen_names
+            ]
+            if para:
+                tables.append(
+                    {
+                        "page": para[0]["page"],
+                        "header": ["评分因素", "分值", "来源"],
+                        "rows": [[p["name"], f'{p["score"]} 分', "段落"] for p in para],
+                        "source": "paragraph",
+                    }
+                )
+            print(JSON_BEGIN)
+            print(
+                json.dumps(
+                    {"pdf": path, "pages": doc.page_count, "scoring_tables": tables},
+                    ensure_ascii=False,
+                )
+            )
+            print(JSON_END)
+            return
         sections = {name: find_pages(pages, pats) for name, pats in SECTION_PATTERNS.items()}
         eval_pages = sections.get("评标办法") or []
         # 章节范围而不是命中页：评分细则通常在“评标办法”标题之后几页

@@ -65,6 +65,66 @@ node --no-warnings src/scoring-hotspots.ts --top=40 --out=output/高频评分点
 node --no-warnings src/price-benchmark.ts --out=output/中标价基准表.md
 ```
 
+## 技术标自检（写完之后查）
+
+给一份写好的技术标，逐项对照评分标准，指出缺什么、处在哪一档。
+
+```bash
+# 最常用：标书 + 项目名
+node --no-warnings src/tech-bid-check.ts --bid=技术标.docx --title="铜陵市义安区2026年学前教育"
+
+# 已知 attach_guid 时更准
+node --no-warnings src/tech-bid-check.ts --bid=技术标.docx --guid=<attach_guid>
+
+# 标书标题格式怪时，先看章节切分对不对
+node --no-warnings src/tech-bid-check.ts --bid=技术标.docx --dump-sections
+
+# 改完规则库必跑
+node --no-warnings src/selfcheck-validate.ts
+```
+
+支持 .txt / .md / .docx（docx 用 Python 标准库解析，零依赖）。
+
+输出的核心是三态：
+
+| 状态 | 含义 |
+|---|---|
+| 已覆盖 | 至少命中一项证据，带原文行号可核对 |
+| 有标题无证据 | 章节在，但没有任何量化证据（空话） |
+| 缺失 | 连章节都没有 |
+
+**档位是「证据条数推定」，不是评委打分。** 想改判定，改规则库，不用改代码。
+
+### 规则库与回归
+
+```
+rules/v1/topics.csv   章节 + 标题别名（决定怎么切章）
+rules/v1/checks.csv   检查项 + 证据（主要维护对象）
+rules/v1/tiers.csv    证据条数 → 档位
+```
+
+撰写方法见 `rules/v1/README.md`。改完跑：
+
+```bash
+node --no-warnings src/selfcheck-validate.ts            # 校验（报错带文件:行号）
+node --no-warnings src/eval/gen-fixtures.ts             # 重新生成 4 份测试标书
+node --no-warnings src/eval/run-eval.ts                 # 回归
+node --test src/lib/selfcheck/diagnose.test.ts          # 单元测试
+```
+
+`run-eval` 里最重要的断言是 **ai-emptytalk（满篇形容词的空话标）覆盖必须为 0** ——
+它保证自检器不会把“写了标题”当成“写了内容”。
+
+### 评分原文的完整性
+
+`scoring_item` 的单元格截断在 200 字，档位原文可能不全。
+`backfill-scoring-full.ts` 用放宽到 1200 字的抽取器另建 `scoring_item_full`：
+
+```bash
+node --no-warnings src/backfill-scoring-full.ts            # 全量（约 1 小时，可断点续跑）
+node --no-warnings src/backfill-scoring-full.ts --limit=50 # 先跑一批
+```
+
 ## 数据生产（一般不用跑）
 
 已有的数据不动就别重跑，这些都是几十分钟到几小时的任务。
@@ -282,7 +342,8 @@ standard_research       64 条
 
 ```
 src/              源码（TS 为主，PDF 解析用 Python）
-src/lib/          共享算法（下浮率统计的唯一实现：口径/匹配/去重/分位）
+src/lib/          共享算法（下浮率统计 / 评分项读取 / 文本切章 / 规则编译）
+rules/v1/         技术标自检规则库（CSV，业务专家维护，改完跑 selfcheck-validate）
 data/index.db     主库（SQLite）
 data/standards.json          标准库源文件（手工维护）
 data/standards-research.json 调研发现源文件

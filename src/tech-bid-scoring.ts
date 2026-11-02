@@ -18,43 +18,23 @@ import { DatabaseSync } from 'node:sqlite';
 import { join } from 'node:path';
 import { mkdirSync, writeFileSync } from 'node:fs';
 
+import {
+  dedup,
+  loadClarifications,
+  loadRejectItems,
+  loadScoreItems,
+  SCORE_COND,
+  scoreOf,
+} from './lib/tender-scoring.ts';
+
 const DATA = 'data';
 const argOf = (k: string): string | undefined => {
   const hit = process.argv.find((a) => a.startsWith(`--${k}=`));
   return hit ? hit.slice(k.length + 3) : undefined;
 };
 
-const SCORE_COND =
-  "cells_json LIKE '%分值%' OR cells_json LIKE '%得分%' OR cells_json LIKE '%评分标准%' OR cells_json LIKE '%评分因素%'";
-const REJECT_COND =
-  "cells_json LIKE '%符合性评审%' OR cells_json LIKE '%资格评审%' OR cells_json LIKE '%否决%' OR cells_json LIKE '%废标%' OR cells_json LIKE '%无效投标%' OR cells_json LIKE '%不予受理%' OR cells_json LIKE '%作废标%' OR cells_json LIKE '%投标无效%'";
-
-/**
- * 评分表里混入的"分值构成"说明行——它们提到“100 分”但不是评分项，
- * 不过滤的话会被误认为一个 100 分的评分条目排在首位。
- * 注意：PDF 提取会把词拆开（实测「分值构 成」中间有空格），必须去空格后再匹配。
- */
-const NOT_A_ITEM = ['分值构成', '分值组成', '分值分配', '分值设置', '评标办法前附表'];
-const isNotItem = (text: string): boolean => {
-  const t = text.replace(/\s+/g, '');
-  return NOT_A_ITEM.some((k) => t.includes(k));
-};
-
-const clean = (s: string): string => s.replace(/\s+/g, ' ').trim();
-/** 从单元格数组拼出可读的一行；去掉全空单元格 */
-const rowText = (cellsJson: string): string => {
-  try {
-    const cells = JSON.parse(cellsJson) as unknown[];
-    return cells.map((c) => clean(String(c ?? ''))).filter(Boolean).join(' | ');
-  } catch {
-    return '';
-  }
-};
-/** 从行里抽分值：优先「（N 分）」形式，退而求其次取纯数字单元格 */
-const scoreOf = (text: string): number | null => {
-  const m = /[（(]\s*(\d+(?:\.\d+)?)\s*分\s*[）)]/.exec(text) ?? /(\d+(?:\.\d+)?)\s*分/.exec(text);
-  return m ? Number(m[1]) : null;
-};
+// 评分项/废标项的过滤条件与文本还原已抽到 src/lib/tender-scoring.ts，
+// 自检器（tech-bid-check）复用同一份实现，避免出现第二套 SCORE_COND 口径。
 
 const db = new DatabaseSync(join(DATA, 'index.db'), { readOnly: true });
 
@@ -86,27 +66,7 @@ const doc = (guid
       .get(`%${title}%`)) as Record<string, unknown> | undefined;
 
 // 澄清文件里的问答（可能改了评分标准——不核对就会按过时规则写标）
-// 同一问题可能被多份澄清文件重复收录，按 question 前 80 字去重
-const clarRaw = doc
-  ? (db
-      .prepare(
-        `SELECT seq, question, answer, affects FROM clarification_qa
-         WHERE announcement_guid = ? ORDER BY seq`,
-      )
-      .all(doc.announcement_guid as string) as Array<{
-      seq: number;
-      question: string;
-      answer: string;
-      affects: string | null;
-    }>)
-  : [];
-const seenQ = new Set<string>();
-const clar = clarRaw.filter((c) => {
-  const k = (c.question ?? '').replace(/^\s*问\s*[：:]\s*/, '').slice(0, 80);
-  if (seenQ.has(k)) return false;
-  seenQ.add(k);
-  return true;
-});
+const clar = doc ? loadClarifications(db, doc.announcement_guid as string) : [];
 
 if (!doc) {
   console.log(`未找到匹配的招标文件解析记录：${guid ?? title}`);
@@ -114,33 +74,12 @@ if (!doc) {
 }
 
 const g = doc.attach_guid as string;
-const scoreItems = (
-  db.prepare(`SELECT page, seq, cells_json FROM scoring_item WHERE attach_guid = ? AND (${SCORE_COND}) ORDER BY page, seq`).all(g) as Array<{
-    page: number;
-    seq: number;
-    cells_json: string;
-  }>
-)
-  .map((r) => ({ page: r.page, text: rowText(r.cells_json) }))
-  .filter((r) => r.text.length > 6 && !isNotItem(r.text));
-
-const rejectItems = (
-  db.prepare(`SELECT page, seq, cells_json FROM scoring_item WHERE attach_guid = ? AND (${REJECT_COND}) ORDER BY page, seq`).all(g) as Array<{
-    page: number;
-    seq: number;
-    cells_json: string;
-  }>
-)
-  .map((r) => ({ page: r.page, text: rowText(r.cells_json) }))
-  .filter((r) => r.text.length > 6);
+// 读取实现见 src/lib/tender-scoring.ts：默认不过滤引用型条目，
+// 保持与既有产物完全一致（只有自检器传 dropReferences: true）。
+const scoreItems = loadScoreItems(db, g);
+const rejectItems = loadRejectItems(db, g);
 
 db.close();
-
-/** 去重（同一张表跨页重复出现时，文本完全一致） */
-const dedup = <T extends { text: string }>(arr: T[]): T[] => {
-  const seen = new Set<string>();
-  return arr.filter((x) => (seen.has(x.text) ? false : (seen.add(x.text), true)));
-};
 
 const scores = dedup(scoreItems);
 const rejects = dedup(rejectItems);
