@@ -76,11 +76,23 @@ node --no-warnings src/tech-bid-check.ts --bid=技术标.docx --title="铜陵市
 # 已知 attach_guid 时更准
 node --no-warnings src/tech-bid-check.ts --bid=技术标.docx --guid=<attach_guid>
 
+# 加项目类型，才会判「强制规范漏引」
+node --no-warnings src/tech-bid-check.ts --bid=技术标.docx --guid=<guid> --project-type=房建
+
+# 只看工程本体信号（澄清关注点 / 工期态势 / 规范核对）
+node --no-warnings src/tech-bid-check.ts --bid=技术标.docx --guid=<guid> --dump-context --project-type=房建
+
+# 关掉本体信号，输出与旧版逐字节一致（零回归对拍用）
+node --no-warnings src/tech-bid-check.ts --bid=技术标.docx --guid=<guid> --no-context
+
 # 标书标题格式怪时，先看章节切分对不对
 node --no-warnings src/tech-bid-check.ts --bid=技术标.docx --dump-sections
 
 # 改完规则库必跑
 node --no-warnings src/selfcheck-validate.ts
+
+# 数据质量闸门（分母、覆盖率、归一化）
+node --no-warnings src/data-quality.ts
 ```
 
 支持 .txt / .md / .docx（docx 用 Python 标准库解析，零依赖）。
@@ -94,6 +106,22 @@ node --no-warnings src/selfcheck-validate.ts
 | 缺失 | 连章节都没有 |
 
 **档位是「证据条数推定」，不是评委打分。** 想改判定，改规则库，不用改代码。
+
+### 报告的三块内容
+
+| 块 | 回答什么 | 数据来源 |
+|---|---|---|
+| 规则诊断 | 标书**写得全不全** | `scoring_item` + `rules/v1` |
+| 工程本体信号 | 这个项目**要特别注意什么** | 澄清答疑 / 工期 / 限价 / 标准库 |
+| 废标风险 | 有没有直接出局的风险 | 符合性评审条款 |
+
+工程本体信号三节：
+
+1. **本项目关注点**（来自澄清）——本项目 239 条澄清命中 23 个主题，以及"未归类"的项目专属问题
+2. **工期与限价态势**——与同类档位的中位/P25–P75 比，**样本 n≥30 才给结论**
+3. **规范符合性**——「编制依据」里引的标准是否现行、有没有漏引强制规范
+
+> 每个结论都带样本量 n 与降级原因；"库内未收录"不等于"标准错误"。
 
 ### 规则库与回归
 
