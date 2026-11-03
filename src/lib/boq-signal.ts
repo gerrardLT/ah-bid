@@ -201,7 +201,13 @@ export function loadPrivateBoq(db: DatabaseSync, title: string | null): BoqSigna
   for (const { project } of projects) {
     const p = norm(project ?? '');
     if (p.length < 6) continue;
-    if ((t.includes(p) || p.includes(t)) && p.length > bestLen) {
+    // 正向（项目名是公告标题的一部分）优先。
+    // 反向（标题是项目名的一部分）只在标题足够长时允许 ——
+    // 标题通常带「招标公告」「评定分离」等后缀，如果它比项目名还短，
+    // 说明是个泛称（如「供电工程」），拿它去配会串到别的项目上。
+    const forward = t.includes(p);
+    const backward = p.includes(t) && t.length >= 10;
+    if ((forward || backward) && p.length > bestLen) {
       best = project;
       bestLen = p.length;
     }
