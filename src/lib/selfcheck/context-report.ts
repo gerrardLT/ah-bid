@@ -100,6 +100,32 @@ export function renderContextSection(ctx: ProjectContext): string {
       out.push(`| ${esc(s.profession)} | ${esc(s.scheme)} | ${s.count} | ${esc(s.top.join('、') || '—')} |`);
     }
     out.push('');
+
+    // 闭环：清单说要写这些方案，标书里写了没有
+    if (boq.coverage?.length) {
+      const miss = boq.coverage.filter((c) => !c.covered);
+      out.push(`### 覆盖检查：清单要求的方案，标书写了没有`);
+      out.push('');
+      out.push(
+        `> ${boq.coverage.length} 类方案中，**已覆盖 ${boq.coverage.length - miss.length} 类，缺 ${miss.length} 类**。` +
+          `判定口径与规则诊断一致：命中行必须有实质内容，只有小标题不算。`,
+      );
+      out.push('');
+      out.push('| 施工方案 | 标书状态 | 证据 |');
+      out.push('|---|---|---|');
+      const ordered2 = [...boq.coverage].sort(
+        (a, b) => Number(a.covered) - Number(b.covered) || a.scheme.localeCompare(b.scheme),
+      );
+      for (const c of ordered2) {
+        out.push(
+          `| ${esc(c.scheme)} | ${c.covered ? '✅ 已覆盖' : '**❌ 缺失**'} | ` +
+            (c.covered ? `L${(c.line ?? 0) + 1} ${esc(clip(c.snippet ?? '', 40))}` : '—') +
+            ' |',
+        );
+      }
+      out.push('');
+    }
+
     out.push(
       '> 清单里有这些分项，技术标就必须有对应的施工方案——' +
         '这是评委判断「针对性」最直接的地方（他们知道这个工程有什么活）。',

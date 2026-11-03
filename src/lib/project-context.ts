@@ -14,7 +14,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 
 import type { BidDoc } from './bid-text.ts';
-import { loadProjectBoq, type BoqSignal } from './boq-signal.ts';
+import { checkSchemeCoverage, loadProjectBoq, type BoqSignal } from './boq-signal.ts';
 import { classifyQa, type QaTopic } from './qa-topics.ts';
 import {
   buildStandardIndex,
@@ -459,6 +459,12 @@ export function buildProjectContext(db: DatabaseSync, bid: BidDoc, opts: BuildOp
   }
   if (boq === null) notes.push('本项目没有 zip 附件，无法从清单推导施工方案');
   else if (boq.schemes.length === 0) notes.push(boq.note ?? '附件里没有可解析的工程量清单');
+  else {
+    // 闭环：清单说要写这些方案，标书里到底写了没有
+    boq.coverage = checkSchemeCoverage(bid, boq.schemes);
+    const miss = boq.coverage.filter((c) => !c.covered).length;
+    if (miss > 0) notes.push(`清单要求的 ${boq.schemes.length} 类方案里，标书缺 ${miss} 类`);
+  }
 
   return {
     announcementGuid: opts.announcementGuid,

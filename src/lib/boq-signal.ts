@@ -16,6 +16,7 @@ import { join } from 'node:path';
 
 import type { DatabaseSync } from 'node:sqlite';
 
+import type { BidDoc } from './bid-text.ts';
 import { parseCsv } from './selfcheck/compile-rules.ts';
 
 export interface Scheme {
@@ -52,6 +53,8 @@ export interface BoqSignal {
   /** 编码不在映射表内的项数 */
   unmapped: number;
   schemes: SchemeHit[];
+  /** 每个方案在标书里的覆盖情况；只有 buildProjectContext 会填（它拿得到 BidDoc） */
+  coverage?: CoverageHit[];
   note?: string;
 }
 
@@ -173,4 +176,78 @@ export function loadProjectBoq(db: DatabaseSync, announcementGuid: string): BoqS
 
   const { schemes, unmapped } = groupBoq(rows);
   return { zips: zips.length, parsedZips, rows: rows.length, unmapped, schemes };
+}
+
+// ---------------------------------------------------------------- 覆盖检查
+
+export interface CoverageHit {
+  scheme: string;
+  covered: boolean;
+  /** 命中的关键词 */
+  matched?: string;
+  line?: number;
+  snippet?: string;
+}
+
+let cachedEvidence: Map<string, string[]> | null = null;
+
+/** 方案 → 标书里该出现的关键词 */
+export function loadSchemeEvidence(): Map<string, string[]> {
+  if (cachedEvidence) return cachedEvidence;
+  const rows = parseCsv(readFileSync('rules/boq/scheme-evidence.csv', 'utf8').replace(/^\uFEFF/, ''));
+  const h = rows[0].map((x) => x.trim());
+  const si = h.indexOf('scheme');
+  const ki = h.indexOf('keywords');
+  if (si < 0 || ki < 0) throw new Error('scheme-evidence.csv 缺少 scheme/keywords 列');
+  const m = new Map<string, string[]>();
+  for (const r of rows.slice(1)) {
+    const s = (r[si] ?? '').trim();
+    if (!s) continue;
+    m.set(
+      s,
+      (r[ki] ?? '')
+        .split('|')
+        .map((x) => x.trim())
+        .filter(Boolean),
+    );
+  }
+  cachedEvidence = m;
+  return m;
+}
+
+/**
+ * 清单推导出的方案，在标书里有没有对应内容。
+ *
+ * 判定与 diagnose 的 term 证据同一口径：命中行去掉关键词后必须还剩 ≥8 字，
+ * 否则「1.1 电气安装」这种小标题会让所有方案都"已覆盖"。
+ */
+export function checkSchemeCoverage(bid: BidDoc, schemes: SchemeHit[]): CoverageHit[] {
+  const ev = loadSchemeEvidence();
+  const out: CoverageHit[] = [];
+
+  for (const s of schemes) {
+    const kws = ev.get(s.scheme) ?? [];
+    let hit: CoverageHit | null = null;
+    for (let i = 0; i < bid.lines.length && !hit; i++) {
+      const line = bid.lines[i];
+      for (const kw of kws) {
+        const idx = line.indexOf(kw);
+        if (idx < 0) continue;
+        const rest = (line.slice(0, idx) + line.slice(idx + kw.length))
+          .replace(/^[\s:：、.．\d#\-|]+/, '')
+          .trim();
+        if (rest.length < 8) continue;
+        hit = {
+          scheme: s.scheme,
+          covered: true,
+          matched: kw,
+          line: i,
+          snippet: line.slice(Math.max(0, idx - 16), idx + 44).trim(),
+        };
+        break;
+      }
+    }
+    out.push(hit ?? { scheme: s.scheme, covered: false });
+  }
+  return out;
 }
