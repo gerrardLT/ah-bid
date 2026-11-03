@@ -11,6 +11,7 @@
  * 只读，不改任何表。
  */
 
+import { execFileSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 
 import { classifyQa, dedupeQuestions, loadQaTopics } from './lib/qa-topics.ts';
@@ -109,5 +110,20 @@ if (problems.length) {
   process.exit(2);
 }
 
-console.log('\n全部达标。');
 db.close();
+
+// ---- 清单三表（在独立进程里跑，失败会带出具体是哪张表哪一行） ----
+// 三表靠「方案名」字符串互相引用，名字写错不报错只会静默失效，
+// 所以这道检查必须放进质量闸门，而不是靠人记得手动跑。
+console.log('');
+try {
+  const out = execFileSync('node', ['--no-warnings', 'src/boq-validate.ts'], { encoding: 'utf8' });
+  console.log(`  ✓ 清单三表        ${out.trim()}`);
+} catch (e) {
+  const err = e as { stdout?: string; stderr?: string };
+  console.log('  ✗ 清单三表        校验失败：');
+  console.log(err.stderr ?? String(e));
+  process.exit(3);
+}
+
+console.log('\n全部达标。');

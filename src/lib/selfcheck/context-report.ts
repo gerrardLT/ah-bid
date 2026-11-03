@@ -111,10 +111,13 @@ export function renderContextSection(ctx: ProjectContext): string {
     // 闭环：清单说要写这些方案，标书里写了没有
     if (boq.coverage?.length) {
       const miss = boq.coverage.filter((c) => !c.covered);
+      const outside = boq.coverage.filter((c) => c.covered && c.outsideMethod);
+      const inMethod = boq.coverage.length - miss.length - outside.length;
       out.push(`### 覆盖检查：清单要求的方案，标书写了没有`);
       out.push('');
       out.push(
-        `> ${boq.coverage.length} 类方案中，**已覆盖 ${boq.coverage.length - miss.length} 类，缺 ${miss.length} 类**。` +
+        `> ${boq.coverage.length} 类方案中，**「主要施工方法」章节内覆盖 ${inMethod} 类` +
+          `${outside.length ? `，仅别处提及 ${outside.length} 类` : ''}，缺 ${miss.length} 类**。` +
           `判定口径与规则诊断一致：命中行必须有实质内容，只有小标题不算。`,
       );
       out.push('');
@@ -124,11 +127,12 @@ export function renderContextSection(ctx: ProjectContext): string {
         (a, b) => Number(a.covered) - Number(b.covered) || a.scheme.localeCompare(b.scheme),
       );
       for (const c of ordered2) {
-        out.push(
-          `| ${esc(c.scheme)} | ${c.covered ? '✅ 已覆盖' : '**❌ 缺失**'} | ` +
-            (c.covered ? `L${(c.line ?? 0) + 1} ${esc(clip(c.snippet ?? '', 40))}` : '—') +
-            ' |',
-        );
+        const mark = !c.covered ? '**❌ 缺失**' : c.outsideMethod ? '⚠ 仅别处提及' : '✅ 已覆盖';
+        const evidence = c.covered
+          ? `L${(c.line ?? 0) + 1} ${esc(clip(c.snippet ?? '', 40))}` +
+            (c.outsideMethod ? '（不在「主要施工方法」内）' : '')
+          : '—';
+        out.push(`| ${esc(c.scheme)} | ${mark} | ${evidence} |`);
       }
       out.push('');
 

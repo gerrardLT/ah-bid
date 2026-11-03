@@ -91,8 +91,17 @@ node --no-warnings src/tech-bid-check.ts --bid=技术标.docx --dump-sections
 # 改完规则库必跑
 node --no-warnings src/selfcheck-validate.ts
 
+# 改完清单三表（scheme-map / evidence / outline）必跑
+node --no-warnings src/boq-validate.ts
+
 # 数据质量闸门（分母、覆盖率、归一化）
 node --no-warnings src/data-quality.ts
+
+# 批量扫描所有招标附件里的清单 → 每项目「要写哪些施工方案」
+node --no-warnings src/boq-scan.ts --out=output/清单扫描.md
+
+# 用一份施组模板体检所有有清单的项目 → 量化规则库盲区
+node --no-warnings src/boq-coverage-audit.ts --template=技术标.docx --out=output/清单覆盖体检.md
 ```
 
 支持 .txt / .md / .docx（docx 用 Python 标准库解析，零依赖）。

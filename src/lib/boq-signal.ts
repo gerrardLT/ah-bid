@@ -226,6 +226,8 @@ export interface CoverageHit {
   matched?: string;
   line?: number;
   snippet?: string;
+  /** 只在「主要施工方法」以外的地方提到（如编制依据），评委眼里不算方案 */
+  outsideMethod?: boolean;
 }
 
 let cachedEvidence: Map<string, string[]> | null = null;
@@ -296,27 +298,49 @@ export function checkSchemeCoverage(bid: BidDoc, schemes: SchemeHit[]): Coverage
   const ev = loadSchemeEvidence();
   const out: CoverageHit[] = [];
 
-  for (const s of schemes) {
+  // 方案应写在「主要施工方法」章节。只在前面的「编制依据」里提一句
+  // （「依据 GB 50261 消防给水及消火栓系统技术规范」），评委眼里不算写了方案。
+  const methodSecs = bid.sections.filter((s) => s.topicId === 'SG-METHOD');
+  const range =
+    methodSecs.length > 0
+      ? {
+          from: Math.min(...methodSecs.map((s) => s.startLine)),
+          to: Math.max(...methodSecs.map((s) => s.endLine)),
+        }
+      : null;
+
+  const find = (s: SchemeHit, from: number, to: number): CoverageHit | null => {
     const kws = ev.get(s.scheme) ?? [];
-    let hit: CoverageHit | null = null;
-    for (let i = 0; i < bid.lines.length && !hit; i++) {
+    const end = Math.min(to, bid.lines.length - 1);
+    for (let i = Math.max(0, from); i <= end; i++) {
       const line = bid.lines[i];
       for (const kw of kws) {
         const idx = line.indexOf(kw);
         if (idx < 0) continue;
+        // 与 diagnose 的 term 证据同口径：去掉关键词后必须还剩 ≥8 字，
+        // 否则「4.3 消防工程」这种小标题会让所有方案都"已覆盖"
         const rest = (line.slice(0, idx) + line.slice(idx + kw.length))
           .replace(/^[\s:：、.．\d#\-|]+/, '')
           .trim();
         if (rest.length < 8) continue;
-        hit = {
+        return {
           scheme: s.scheme,
           covered: true,
           matched: kw,
           line: i,
           snippet: line.slice(Math.max(0, idx - 16), idx + 44).trim(),
         };
-        break;
       }
+    }
+    return null;
+  };
+
+  for (const s of schemes) {
+    let hit = range ? find(s, range.from, range.to) : null;
+    if (!hit) {
+      // 退而求其次：全文找，但标记出来 —— 这类「提到了但没写方案」最容易被忽略
+      const anywhere = find(s, 0, bid.lines.length - 1);
+      if (anywhere) hit = { ...anywhere, outsideMethod: true };
     }
     out.push(hit ?? { scheme: s.scheme, covered: false });
   }
