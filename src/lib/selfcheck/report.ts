@@ -89,6 +89,12 @@ export function matchScoreItems(input: ReportInput): Array<{ item: ScoreRow; che
   }));
 }
 
+/** 从评分项原文抽分值：取第一个「N 分」 */
+function scoreOf(text: string): string | null {
+  const m = text.match(/(\d+(?:\.\d+)?)\s*分/);
+  return m ? m[1] : null;
+}
+
 function esc(s: string): string {
   return s.replace(/\|/g, '／').replace(/\n/g, ' ');
 }
@@ -150,8 +156,44 @@ export function renderMarkdown(input: ReportInput): string {
     out.push('');
   }
 
+  // ---- 一、本项目考什么：按评分项组织，而不是按规则顺序 ----
+  // 评委只看评分表，所以先列「他要什么 + 我写了没有」，
+  // 再看「通用检查有没有漏」，顺序不能反。
+  const topicName = new Map(ruleset.topics.map((x) => [x.id, x.name]));
+  const topicDiag = new Map<string, Diagnosis[]>();
+  for (const d of result.diagnoses) {
+    const arr = topicDiag.get(d.topicId) ?? [];
+    arr.push(d);
+    topicDiag.set(d.topicId, arr);
+  }
+  const hit = matched.filter((m) => m.check !== null);
+
+  if (hit.length) {
+    out.push(`## 一、本项目考什么（${techItems.length} 条技术标评分项）`);
+    out.push('');
+    out.push('> 按评分表逐条列。**先看要拿分的地方写得怎么样**，再看下面的通用检查。');
+    out.push('> 同一章节的多个评分项合并到一行。');
+    out.push('');
+    out.push('| 评分项（原文） | 分值 | 对应章节 | 该章节检查情况 |');
+    out.push('|---|---|---|---|');
+    const seenTopic = new Set<string>();
+    for (const m of hit) {
+      const tid = m.check!.topicId;
+      if (seenTopic.has(tid)) continue;
+      seenTopic.add(tid);
+      const ds = topicDiag.get(tid) ?? [];
+      const ok = ds.filter((d) => d.state === 'covered').length;
+      const bad = ds.length - ok;
+      out.push(
+        `| ${esc(clip(m.item.text, 60))} | ${scoreOf(m.item.text) ?? '—'} | ` +
+          `${esc(topicName.get(tid) ?? tid)}（${ds.length} 条） | ✅ ${ok}${bad ? ` ／ ❌ ${bad}` : ''} |`,
+      );
+    }
+    out.push('');
+  }
+
   if (unmatched.length) {
-    out.push(`## 一、未匹配的技术标评分项（${unmatched.length} 条，需人工对照）`);
+    out.push(`### 评分表里有、规则库没有（${unmatched.length} 条，需人工对照）`);
     out.push('');
     out.push('> 这些是本项目评分表里的技术标要求，但规则库里还没有对应检查项。');
     out.push('> 它们的缺失不会被下面的诊断发现 —— **这是本报告最大的盲区**。');
@@ -165,7 +207,7 @@ export function renderMarkdown(input: ReportInput): string {
     out.push('');
   }
 
-  out.push(`## ${unmatched.length ? '二' : '一'}、总览`);
+  out.push(`## ${techItems.length ? '二' : '一'}、总览`);
   out.push('');
   out.push(`- 已覆盖 **${t.covered}** 项，有标题无证据 **${t.mentioned}** 项，缺失 **${t.missing}** 项`);
   const tierCount = new Map<string, number>();
@@ -191,7 +233,7 @@ export function renderMarkdown(input: ReportInput): string {
   );
   const problems = ordered.filter((d) => d.state !== 'covered');
 
-  out.push(`## ${unmatched.length ? '三' : '二'}、缺项清单（${problems.length} 条）`);
+  out.push(`## ${techItems.length ? '三' : '二'}、缺项清单（${problems.length} 条）`);
   out.push('');
   if (!problems.length) {
     out.push('（全部检查项都有证据支撑）');
@@ -221,7 +263,7 @@ export function renderMarkdown(input: ReportInput): string {
   }
   out.push('');
 
-  out.push(`## ${unmatched.length ? '四' : '三'}、覆盖明细`);
+  out.push(`## ${techItems.length ? '四' : '三'}、覆盖明细`);
   out.push('');
   const covered = ordered.filter((d) => d.state !== 'missing');
   if (!covered.length) {
@@ -240,7 +282,7 @@ export function renderMarkdown(input: ReportInput): string {
   }
   out.push('');
 
-  out.push(`## ${unmatched.length ? '五' : '四'}、废标风险（${input.rejects.length} 条条款）`);
+  out.push(`## ${techItems.length ? '五' : '四'}、废标风险（${input.rejects.length} 条条款）`);
   out.push('');
   if (!input.rejects.length) {
     out.push('（本项目评分表里未抽取到符合性/资格评审条款，需人工查阅招标文件）');
@@ -256,7 +298,7 @@ export function renderMarkdown(input: ReportInput): string {
 
   if (input.clarifications.length) {
     const affected = input.clarifications.filter((c) => (c.affects ?? '').includes('评分标准'));
-    out.push(`## 六、澄清提示（${input.clarifications.length} 条）`);
+    out.push(`## ${techItems.length ? '六' : '五'}、澄清提示（${input.clarifications.length} 条）`);
     out.push('');
     out.push(
       `> 本项目有 **${input.clarifications.length}** 条澄清问答，其中 **${affected.length}** 条涉及评分标准。`,
