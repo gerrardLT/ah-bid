@@ -15,6 +15,9 @@ data/*.csv
 data/*.bin
 data/*.pdf
 data/*.png
+data/*.xls
+data/*.xlsx
+data/_tmp_boq/
 data/*.txt
 data/*.out
 data/*.err
