@@ -6,7 +6,8 @@
 启动：python web/server.py [端口]
 访问：http://127.0.0.1:8420/
 """
-import sys, os, json, sqlite3, mimetypes
+import sys, os, json, sqlite3, mimetypes, re, subprocess, tempfile
+from datetime import datetime
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, quote
 
@@ -311,6 +312,99 @@ def overview():
     db.close()
     return stats
 
+# ---------------- 技术标自检 ----------------
+#
+# 前端只做两件事：把 docx 传上来、把返回的 JSON 画出来。
+# 所有计算都在 src/tech-bid-check.ts 里，这里只负责落临时文件、调进程、存历史。
+# 这样 CLI / Markdown / 面板三条出口用的是同一份诊断结果。
+
+PROJ = os.path.dirname(ROOT)
+CHECKS_DIR = os.path.join(PROJ, "output", "checks")
+ALLOWED_EXT = {".docx", ".doc", ".md", ".txt"}
+
+
+def run_check(data: bytes, name: str, guid: str, ptype: str) -> dict:
+    ext = os.path.splitext(name)[1].lower() or ".docx"
+    if ext not in ALLOWED_EXT:
+        return {"ok": False, "error": f"不支持的文件类型 {ext}（只收 docx / doc / md / txt）"}
+    fd, tmp = tempfile.mkstemp(suffix=ext)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        cmd = ["node", "--no-warnings", "src/tech-bid-check.ts", f"--bid={tmp}", "--json"]
+        if guid:
+            cmd.append(f"--guid={guid}")
+        if ptype:
+            cmd.append(f"--project-type={ptype}")
+        r = subprocess.run(
+            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=PROJ, timeout=180,
+        )
+        if r.returncode != 0:
+            return {"ok": False, "error": (r.stderr or r.stdout or "自检失败")[-1200:]}
+        try:
+            return {"ok": True, "data": json.loads(r.stdout)}
+        except json.JSONDecodeError:
+            return {"ok": False, "error": "自检输出不是合法 JSON，请用 CLI 排查"}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "自检超过 180 秒（清单解析可能卡住），请改用 CLI 加 --no-context"}
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+
+
+def save_check(name: str, guid: str, ptype: str, data: dict) -> str:
+    os.makedirs(CHECKS_DIR, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    stem = re.sub(r"[^\w\u4e00-\u9fff.-]+", "_", os.path.splitext(name)[0])[:40] or "check"
+    path = os.path.join(CHECKS_DIR, f"{ts}-{stem}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(
+            {"time": ts, "name": name, "guid": guid, "projectType": ptype, "data": data},
+            f, ensure_ascii=False,
+        )
+    return path
+
+
+def list_checks() -> dict:
+    if not os.path.isdir(CHECKS_DIR):
+        return {"ok": True, "items": []}
+    items = []
+    for fn in sorted(os.listdir(CHECKS_DIR), reverse=True):
+        if not fn.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(CHECKS_DIR, fn), encoding="utf-8") as f:
+                obj = json.load(f)
+        except Exception:
+            continue
+        s = (obj.get("data") or {}).get("summary") or {}
+        items.append({
+            "file": fn,
+            "time": obj.get("time"),
+            "name": obj.get("name"),
+            "covered": s.get("covered"),
+            "mentioned": s.get("mentioned"),
+            "missing": s.get("missing"),
+            "rejectRisk": s.get("rejectRisk"),
+        })
+        if len(items) >= 30:
+            break
+    return {"ok": True, "items": items}
+
+
+def get_check(fn: str) -> dict:
+    if not fn or "/" in fn or "\\" in fn or not fn.endswith(".json"):
+        return {"ok": False, "error": "非法文件名"}
+    fp = os.path.join(CHECKS_DIR, fn)
+    if not os.path.exists(fp):
+        return {"ok": False, "error": "不存在"}
+    with open(fp, encoding="utf-8") as f:
+        return {"ok": True, "data": json.load(f)}
+
+
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -334,6 +428,12 @@ class H(BaseHTTPRequestHandler):
             return v[0] if v else d
 
         try:
+            if p in ("/check", "/check.html"):
+                return self._file(os.path.join(ROOT, "check.html"), "text/html; charset=utf-8")
+            if p == "/api/checks":
+                return self._send(list_checks())
+            if p == "/api/checks/get":
+                return self._send(get_check(one("f", "")))
             if p == "/api/schema":
                 return self._send({"groups": schema(), "stats": overview()})
             if p == "/api/rows":
@@ -406,8 +506,53 @@ class H(BaseHTTPRequestHandler):
         except Exception as e:
             self._send({"error": f"{type(e).__name__}: {e}"}, 500)
 
+    def _file(self, fp, ctype):
+        if not os.path.exists(fp):
+            return self._send({"error": "文件不存在"}, 404)
+        with open(fp, "rb") as f:
+            body = f.read()
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self):
+        """技术标自检：body 是文件原始字节，参数走 query。"""
+        u = urlparse(self.path)
+        qs = parse_qs(u.query)
+
+        def one(k, d=None):
+            v = qs.get(k)
+            return v[0] if v else d
+
+        if u.path != "/api/check":
+            return self._send({"ok": False, "error": "未知接口"}, 404)
+
+        n = int(self.headers.get("Content-Length") or 0)
+        if n <= 0:
+            return self._send({"ok": False, "error": "文件为空"}, 400)
+        if n > 64 * 1024 * 1024:
+            return self._send({"ok": False, "error": "文件超过 64MB"}, 413)
+
+        data = self.rfile.read(n)
+        name = one("name", "upload.docx")
+        guid = one("guid", "")
+        ptype = one("projectType", "")
+
+        res = run_check(data, name, guid, ptype)
+        if res.get("ok"):
+            try:
+                save_check(name, guid, ptype, res["data"])
+            except Exception:
+                pass  # 存历史失败不影响这次结果
+        return self._send(res, 200 if res.get("ok") else 422)
+
 if __name__ == "__main__":
     print(f"数据浏览器 → http://127.0.0.1:{PORT}/")
+    print(f"技术标自检 → http://127.0.0.1:{PORT}/check")
+    print(f"POST 支持：{hasattr(H, 'do_POST')}｜检查历史目录：{CHECKS_DIR}")
     print(f"数据库：{DB}")
     total = sum(t["rows"] for g in schema() for t in g["tables"])
     print(f"{len(ALLOWED)} 张表/视图，合计 {total:,} 行")

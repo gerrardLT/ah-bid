@@ -32,6 +32,7 @@ import { diagnose, tally } from './lib/selfcheck/diagnose.ts';
 import { buildJson, renderMarkdown, type ReportInput, type TenderMeta } from './lib/selfcheck/report.ts';
 import { loadRules, summarize, validateRules } from './lib/selfcheck/rules.ts';
 import { renderActionList } from './lib/selfcheck/summary.ts';
+import { buildActions } from './lib/selfcheck/summary.ts';
 import {
   loadClarifications,
   loadRejectItems,
@@ -217,7 +218,12 @@ const input: ReportInput = {
 // ---- 5) 输出 ----
 const text = AS_JSON
   ? JSON.stringify(
-      { ...(buildJson(input) as Record<string, unknown>), ...(ctx ? { context: ctx } : {}) },
+      {
+        ...(buildJson(input) as Record<string, unknown>),
+        ...(ctx ? { context: ctx } : {}),
+        // 行动清单给前端复用：Markdown 与面板必须用同一份计算，否则两边对不上
+        actions: buildActions(result, ctx, ruleset),
+      },
       null,
       2,
     )

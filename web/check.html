@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>技术标自检 · 针对性检查</title>
+<style>
+:root{
+  --bg:#EFEDE8;--panel:#fff;--line:#D5D1C7;--line-2:#E9E6DF;
+  --thead:#1A1815;--ink:#0A0A09;--ink-2:#3B3630;--ink-3:#6E675E;
+  --accent:#C8371A;--accent-lite:#FF6A45;
+  --bad:#C8371A;--warn:#B26A00;--ok:#2E6B3E;
+  --f:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  --m:"SF Mono","JetBrains Mono",Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.65 var(--f);-webkit-font-smoothing:antialiased}
+
+/* 顶栏 */
+header{height:52px;display:flex;align-items:center;gap:16px;padding:0 18px;border-bottom:1px solid var(--line);background:var(--panel)}
+header h1{font-size:15px;font-weight:700;margin:0;letter-spacing:.3px}
+header .proj{flex:1;max-width:460px}
+header .proj input{width:100%;padding:5px 9px;border:1px solid var(--line);background:#FBFAF7;font:13px var(--f);color:var(--ink)}
+header .ver{font:12px var(--m);color:var(--ink-3)}
+
+/* 布局 */
+main{display:flex;height:calc(100% - 52px)}
+
+/* 左栏 */
+aside{width:288px;flex:none;border-right:1px solid var(--line);background:var(--panel);padding:16px;overflow:auto}
+aside h2{font-size:12px;font-weight:600;color:var(--ink-3);letter-spacing:.8px;margin:0 0 8px}
+.drop{border:1.5px dashed var(--line);padding:26px 12px;text-align:center;cursor:pointer;background:#FBFAF7;transition:border-color .15s}
+.drop:hover,.drop.on{border-color:var(--accent);background:#FFF8F5}
+.drop b{display:block;font-size:13px;font-weight:600}
+.drop span{display:block;font-size:12px;color:var(--ink-3);margin-top:4px}
+.file{font:12px var(--m);color:var(--ok);margin-top:8px;word-break:break-all;display:none}
+.lbl{font-size:12px;color:var(--ink-3);margin:14px 0 5px}
+select,input[type=text]{width:100%;padding:6px 8px;border:1px solid var(--line);background:#FBFAF7;font:13px var(--f);color:var(--ink)}
+button.go{width:100%;margin-top:14px;padding:9px;border:0;background:var(--accent);color:#fff;font:600 14px var(--f);cursor:pointer;letter-spacing:.5px}
+button.go:hover{background:var(--accent-lite)}
+button.go:disabled{background:var(--line);cursor:not-allowed}
+.hist{margin-top:20px;border-top:1px solid var(--line-2);padding-top:14px}
+.hist li{list-style:none;padding:7px 6px;border-bottom:1px solid var(--line-2);cursor:pointer;font-size:12px}
+.hist li:hover{background:#FBFAF7}
+.hist .nm{display:block;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hist .mt{font:11px var(--m);color:var(--ink-3)}
+.hist ul{margin:0;padding:0}
+
+/* 右栏 */
+section{flex:1;overflow:auto;padding:18px 22px 60px}
+.empty{color:var(--ink-3);padding:70px 0;text-align:center}
+
+/* KPI */
+.kpi{display:flex;border:1px solid var(--line);background:var(--panel);margin-bottom:18px}
+.kpi div{flex:1;padding:12px 16px;border-right:1px solid var(--line-2)}
+.kpi div:last-child{border-right:0}
+.kpi b{display:block;font:600 24px/1.1 var(--m);letter-spacing:-.5px}
+.kpi span{display:block;font-size:11px;color:var(--ink-3);margin-top:3px;letter-spacing:.5px}
+.kpi .b b{color:var(--bad)}
+.kpi .w b{color:var(--warn)}
+
+/* 卡片 */
+.sec{font-size:13px;font-weight:700;letter-spacing:.5px;margin:0 0 10px;display:flex;align-items:baseline;gap:8px}
+.sec em{font:11px var(--m);color:var(--ink-3);font-style:normal;font-weight:400;margin-left:auto}
+.card{background:var(--panel);border:1px solid var(--line);border-left-width:3px;margin-bottom:10px}
+.card.reject{border-left-color:var(--bad)}
+.card.boq{border-left-color:#D2691E}
+.card.volume{border-left-color:var(--warn)}
+.card.section{border-left-color:#C9A227}
+.card.mentioned,.card.standard{border-left-color:var(--line)}
+.card h3{font-size:13px;font-weight:600;margin:0;padding:9px 14px;border-bottom:1px solid var(--line-2)}
+.card h3 i{font:11px var(--m);color:var(--ink-3);font-style:normal;margin-left:6px}
+.card ul{margin:0;padding:8px 14px 10px;list-style:none}
+.card li{padding:5px 0;border-bottom:1px dotted var(--line-2);font-size:13px}
+.card li:last-child{border-bottom:0}
+.card li b{font-weight:600}
+.card li u{text-decoration:none;font:11px var(--m);color:var(--ink-3);margin-left:6px}
+.card li .txt{color:var(--ink-2)}
+.segs{margin-top:5px}
+.segs i{display:inline-block;font-style:normal;font-size:11.5px;color:var(--ink-2);background:#F5F3EE;border:1px solid var(--line-2);padding:1px 7px;margin:0 4px 4px 0}
+.more{font-size:12px;color:var(--ink-3);padding:6px 14px 0}
+
+/* 折叠 */
+details{background:var(--panel);border:1px solid var(--line);margin-bottom:8px}
+summary{padding:10px 14px;cursor:pointer;font-size:13px;font-weight:600;list-style:none;display:flex;align-items:center;gap:8px}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--ink-3);font-size:11px;transition:transform .12s}
+details[open] summary::before{transform:rotate(90deg)}
+summary em{font:11px var(--m);color:var(--ink-3);font-style:normal;font-weight:400;margin-left:auto}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{text-align:left;padding:6px 10px;background:#F5F3EE;border-bottom:1px solid var(--line);font-weight:600;color:var(--ink-2);white-space:nowrap}
+td{padding:5px 10px;border-bottom:1px solid var(--line-2);vertical-align:top}
+td.k{white-space:nowrap;color:var(--ink-3);font:11.5px var(--m)}
+.st{font:11.5px var(--m);white-space:nowrap}
+.st.ok{color:var(--ok)}
+.st.warn{color:var(--warn)}
+.st.bad{color:var(--bad)}
+.err{border:1px solid var(--bad);background:#FFF6F3;color:#8A2A12;padding:10px 14px;margin-bottom:14px;font-size:13px;white-space:pre-wrap}
+.tip{font-size:12px;color:var(--ink-3);margin:0 0 10px;padding-left:2px}
+
+/* 窄屏：左栏变全宽、右栏堆叠。
+   实测 482px 视口下，288px 固定左栏会把 KPI 压成竖排 —— 必须处理。 */
+@media (max-width:900px){
+  main{flex-direction:column;height:auto}
+  aside{width:100%;border-right:0;border-bottom:1px solid var(--line)}
+  section{padding:14px}
+  .kpi{flex-wrap:wrap}
+  .kpi div{flex:1 1 50%;border-bottom:1px solid var(--line-2)}
+  header .proj{max-width:none}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>技术标自检</h1>
+  <div class="proj"><input id="guid" type="text" placeholder="项目 guid 或标题关键词（留空则只做通用检查）"></div>
+  <span class="ver" id="ver">规则 —</span>
+</header>
+
+<main>
+  <aside>
+    <h2>1 · 选择标书</h2>
+    <div class="drop" id="drop">
+      <b>拖入技术标</b>
+      <span>或点击选择 .docx / .md / .txt</span>
+    </div>
+    <input type="file" id="file" accept=".docx,.doc,.md,.txt" hidden>
+    <div class="file" id="fname"></div>
+
+    <div class="lbl">项目类型</div>
+    <select id="ptype">
+      <option value="">不指定（不判强制规范漏引）</option>
+      <option value="房建">房建</option>
+      <option value="市政">市政</option>
+      <option value="安装">安装</option>
+      <option value="园林">园林</option>
+    </select>
+
+    <button class="go" id="go" disabled>开始检查</button>
+
+    <div class="hist">
+      <h2>最近检查</h2>
+      <ul id="hist"><li class="mt">（暂无）</li></ul>
+    </div>
+  </aside>
+
+  <section id="out">
+    <div class="empty">左侧选择标书后点「开始检查」<br><br>报告按后果排序：会废标 → 清单要求但没写 → 章节不足 → 章节缺失</div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let picked = null;
+
+// ---------- 选文件 ----------
+$('drop').onclick = () => $('file').click();
+$('file').onchange = () => setFile($('file').files[0]);
+$('drop').ondragover = (e) => { e.preventDefault(); $('drop').classList.add('on'); };
+$('drop').ondragleave = () => $('drop').classList.remove('on');
+$('drop').ondrop = (e) => {
+  e.preventDefault(); $('drop').classList.remove('on');
+  setFile(e.dataTransfer.files[0]);
+};
+function setFile(f) {
+  if (!f) return;
+  picked = f;
+  $('fname').style.display = 'block';
+  $('fname').textContent = f.name + ' · ' + (f.size / 1024).toFixed(0) + ' KB';
+  $('go').disabled = false;
+}
+
+// ---------- 开始检查 ----------
+$('go').onclick = async () => {
+  if (!picked) return;
+  $('go').disabled = true;
+  const old = $('go').textContent;
+  $('go').textContent = '检查中…（3-5 秒）';
+  $('out').innerHTML = '<div class="empty">正在跑 147 条规则 + 清单覆盖 + 工程本体信号…</div>';
+  try {
+    const qs = new URLSearchParams({ name: picked.name, guid: $('guid').value.trim(), projectType: $('ptype').value });
+    const r = await fetch('/api/check?' + qs.toString(), { method: 'POST', body: picked });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || '自检失败');
+    render(j.data);
+    loadHist();
+  } catch (e) {
+    $('out').innerHTML = `<div class="err">${esc(e.message)}</div>`;
+  } finally {
+    $('go').disabled = false;
+    $('go').textContent = old;
+  }
+};
+
+// ---------- 渲染 ----------
+function render(d) {
+  const s = d.summary || {};
+  const groups = (d.actions && d.actions.groups) || [];
+  const diags = d.diagnoses || [];
+  const ctx = d.context || null;
+
+  let h = '<div class="kpi">'
+    + kpi(s.covered, '覆盖')
+    + kpi(s.mentioned, '有标题无证据', 'w')
+    + kpi(s.missing, '缺失')
+    + kpi(s.rejectRisk, '废标风险', 'b')
+    + '</div>';
+
+  if (d.rules && d.rules.hash) $('ver').textContent = '规则 ' + d.rules.hash.slice(0, 8) + ' · ' + diags.length + ' 条';
+
+  if (!groups.length) {
+    h += '<div class="tip">没有发现必须改的问题。下面可展开看明细。</div>';
+  } else {
+    h += '<h2 class="sec">先改这些<em>按后果排序</em></h2>';
+    for (const g of groups) h += card(g);
+  }
+
+  // 折叠：规则诊断
+  h += '<details' + (groups.length ? '' : ' open') + '><summary>规则诊断全部 ' + diags.length + ' 条<em>点开看每条证据</em></summary>'
+    + diagTable(diags) + '</details>';
+
+  // 折叠：工程本体信号
+  if (ctx) h += '<details><summary>工程本体信号<em>澄清 / 清单 / 工期 / 规范</em></summary>' + ctxBlock(ctx) + '</details>';
+
+  $('out').innerHTML = h;
+}
+
+function kpi(v, label, cls) {
+  return `<div class="${cls || ''}"><b>${v ?? '—'}</b><span>${label}</span></div>`;
+}
+
+function card(g) {
+  const items = g.items.map((it) => {
+    if (g.key === 'boq') {
+      const segs = (it.segs || []).map((x) => `<i>${esc(x)}</i>`).join('');
+      return `<li><b>${esc(it.title)}</b>${it.count ? `<u>清单 ${it.count} 项</u>` : ''}`
+        + (segs ? `<div class="segs">${segs}</div>` : '') + '</li>';
+    }
+    if (g.key === 'volume') {
+      return `<li><b>${esc(it.title)}</b><span class="txt"> — 去重后 ${it.bodyChars} 字${it.minChars ? ' / 门槛 ' + it.minChars : ''}</span></li>`;
+    }
+    if (g.key === 'mentioned' || g.key === 'standard') {
+      return `<li><span class="txt">${esc(it.title)}</span></li>`;
+    }
+    return `<li><b>${esc(it.title)}</b>${it.detail ? `<span class="txt"> — ${esc(it.detail)}</span>` : ''}</li>`;
+  }).join('');
+  const more = g.total > g.items.length ? `<div class="more">还有 ${g.total - g.items.length} 条，见下方明细</div>` : '';
+  return `<div class="card ${g.key}"><h3>${g.mark} ${esc(g.label)}<i>${g.total}</i></h3><ul>${items}</ul>${more}</div>`;
+}
+
+function diagTable(diags) {
+  const st = (x) => x === 'covered' ? '<span class="st ok">已覆盖</span>'
+    : x === 'mentioned' ? '<span class="st warn">有标题无证据</span>'
+    : '<span class="st bad">缺失</span>';
+  const rows = diags.map((d) => {
+    const ev = (d.hits && d.hits[0]) ? `L${d.hits[0].line} ${esc((d.hits[0].snippet || '').slice(0, 46))}`
+      : (d.missing && d.missing[0] ? '缺：' + esc(d.missing[0]) : '—');
+    return `<tr><td>${esc(d.title)}</td><td>${st(d.state)}</td><td class="k">${ev}</td></tr>`;
+  }).join('');
+  return '<table><thead><tr><th style="width:200px">检查项</th><th style="width:110px">状态</th><th>证据 / 缺什么</th></tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+function ctxBlock(ctx) {
+  const parts = [];
+  const qa = ctx.qa;
+  if (qa && qa.n) {
+    parts.push('<h3 class="sec" style="margin:14px 14px 6px">澄清关注点<em>本项目 ' + qa.n + ' 条</em></h3>');
+    parts.push('<table><thead><tr><th>主题</th><th>条数</th><th>典型问题</th></tr></thead><tbody>'
+      + qa.items.slice(0, 8).map((x) => `<tr><td>${esc(x.name)}</td><td class="k">${x.count}</td><td>${esc((x.examples && x.examples[0] || '').slice(0, 60))}</td></tr>`).join('')
+      + '</tbody></table>');
+  }
+  const boq = ctx.boq;
+  if (boq && boq.schemes && boq.schemes.length) {
+    parts.push('<h3 class="sec" style="margin:14px 14px 6px">清单要求的方案<em>' + boq.schemes.length + ' 类 / ' + boq.rows + ' 项</em></h3>');
+    parts.push('<table><thead><tr><th>专业</th><th>方案</th><th>项数</th><th>主要分项</th></tr></thead><tbody>'
+      + boq.schemes.map((x) => `<tr><td>${esc(x.profession)}</td><td>${esc(x.scheme)}</td><td class="k">${x.count}</td><td>${esc((x.top || []).join('、'))}</td></tr>`).join('')
+      + '</tbody></table>');
+  }
+  const sch = ctx.schedule, lim = ctx.limit;
+  if (sch || lim) {
+    parts.push('<h3 class="sec" style="margin:14px 14px 6px">工期与限价</h3><table><tbody>'
+      + `<tr><td class="k">工期</td><td>${sch && sch.days ? sch.days + ' 天 · ' + esc(sch.level) : '—'}</td></tr>`
+      + `<tr><td class="k">限价</td><td>${lim && lim.amount ? (lim.amount / 1e4).toFixed(0) + ' 万 · ' + esc(lim.tier || '') : '—'}</td></tr>`
+      + '</tbody></table>');
+  }
+  const std = ctx.standards;
+  if (std && std.cited) {
+    parts.push('<h3 class="sec" style="margin:14px 14px 6px">规范符合性<em>引用 ' + std.cited + ' 条</em></h3>');
+    parts.push('<table><thead><tr><th>引用</th><th>判定</th><th>行</th></tr></thead><tbody>'
+      + std.findings.slice(0, 20).map((f) => `<tr><td>${esc(f.raw)}</td><td>${esc(f.verdict)}</td><td class="k">L${f.line + 1}</td></tr>`).join('')
+      + '</tbody></table>');
+  }
+  if (ctx.notes && ctx.notes.length) {
+    parts.push('<div class="more">降级说明：' + ctx.notes.map(esc).join('；') + '</div>');
+  }
+  return parts.join('') || '<div class="more">（无本体信号：需要填项目 guid）</div>';
+}
+
+// ---------- 历史 ----------
+async function loadHist() {
+  try {
+    const j = await (await fetch('/api/checks')).json();
+    const items = (j.items || []);
+    if (!items.length) { $('hist').innerHTML = '<li class="mt">（暂无）</li>'; return; }
+    $('hist').innerHTML = items.map((x) =>
+      `<li data-f="${esc(x.file)}"><span class="nm">${esc(x.name || '')}</span>`
+      + `<span class="mt">${esc((x.time || '').replace(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$/, '$1-$2-$3 $4:$5'))}`
+      + ` · 覆盖 ${x.covered ?? '-'} / 缺 ${x.missing ?? '-'}</span></li>`
+    ).join('');
+    [...$('hist').querySelectorAll('li[data-f]')].forEach((li) => {
+      li.onclick = async () => {
+        const r = await fetch('/api/checks/get?f=' + encodeURIComponent(li.dataset.f));
+        const jj = await r.json();
+        if (jj.ok) render(jj.data.data);
+        else $('out').innerHTML = `<div class="err">${esc(jj.error)}</div>`;
+      };
+    });
+  } catch (e) { /* 历史加载失败不影响主流程 */ }
+}
+
+loadHist();
+</script>
+</body>
+</html>
