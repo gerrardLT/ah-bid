@@ -22,6 +22,7 @@ data/*.run
 data/*-samples.json
 data/*-recall.md
 data/_*.ts
+data/_*.py
 data/_*.msg
 data/__pycache__/
 
