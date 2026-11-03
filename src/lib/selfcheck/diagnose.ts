@@ -87,9 +87,20 @@ function buildTopicSpans(
       sp.fromLine = 0;
       sp.toLine = doc.lines.length - 1;
     } else {
-      // 正文 = 去掉每段第一行（标题）后，去掉所有空白
-      const body = sp.texts.map((t) => t.split('\n').slice(1).join('\n')).join('\n');
-      sp.bodyChars = body.replace(/\s/g, '').length;
+      // 正文 = 去掉每段第一行（标题）后，按行去重再计字数。
+      // 为什么要去重：空话标把同一段 5 句话重复 13 次就有 313 字，
+      // 只看总字数会让「灌水」通过章节级检查（eval 实测抓到 1 条误判）。
+      const lines = sp.texts.flatMap((t) => t.split('\n').slice(1));
+      const seen = new Set<string>();
+      let n = 0;
+      for (const line of lines) {
+        const t = line.replace(/\s+/g, '');
+        if (t.length < 4) continue; // 空行、纯标点、序号行
+        if (seen.has(t)) continue; // 重复行只算一次
+        seen.add(t);
+        n += t.length;
+      }
+      sp.bodyChars = n;
     }
   }
 
@@ -141,7 +152,7 @@ function matchOne(
         kind: 'volume',
         pattern: ev.pattern,
         line: span?.fromLine ?? 0,
-        snippet: `本章节正文 ${chars} 字（门槛 ${ev.minChars}）`,
+        snippet: `本章节正文去重后 ${chars} 字（门槛 ${ev.minChars}）`,
       };
     }
     return null;

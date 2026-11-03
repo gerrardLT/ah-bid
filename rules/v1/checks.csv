@@ -142,3 +142,7 @@ SG-METHOD-18,SG-METHOD,设备安装,设备安装|水泵|电梯,term:设备安装
 SG-METHOD-19,SG-METHOD,幕墙工程,幕墙|玻璃幕墙,term:幕墙；term:玻璃幕墙；term:石材幕墙,0,GB/T 50502-2009 §7,2026-11-02,
 SG-METHOD-20,SG-METHOD,吊顶与隔墙,吊顶|龙骨|隔墙,term:吊顶；term:轻钢龙骨；term:隔墙,0,GB/T 50502-2009 §7,2026-11-02,
 SG-METHOD-21,SG-METHOD,保温与节能,保温|隔热|节能,term:保温层；term:外墙保温；term:保温隔热,0,GB 50411-2019,2026-11-02,
+SG-METHOD-22,SG-METHOD,地基处理与支护,地基处理|基坑支护|土钉,term:地基处理；term:基坑支护；term:土钉墙；term:喷射混凝土,0,GB 50202-2018,2026-11-02,基坑深度超过 3m 或软土地基时必写；房建与市政都常见
+SG-METHOD-23,SG-METHOD,自控仪表,自控|仪表|传感器,term:自控系统；term:仪表安装；term:传感器；term:变送器,0,GB 50093-2013,2026-11-02,工业厂房与智能化项目常见
+SG-METHOD-24,SG-METHOD,工业管道,工业管道|不锈钢管|铜管,term:工业管道；term:不锈钢管道；term:管道焊接；term:压力试验,0,GB 50235-2010,2026-11-02,
+SG-METHOD-25,SG-METHOD,栏杆与扶手,栏杆|扶手|护栏,term:栏杆；term:扶手；term:护栏,0,GB/T 50502-2009 §7,2026-11-02,房建临边防护与楼梯栏杆
