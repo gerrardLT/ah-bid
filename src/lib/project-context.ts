@@ -14,7 +14,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 
 import type { BidDoc } from './bid-text.ts';
-import { checkSchemeCoverage, loadProjectBoq, type BoqSignal } from './boq-signal.ts';
+import { checkSchemeCoverage, loadPrivateBoq, loadProjectBoq, type BoqSignal } from './boq-signal.ts';
 import { classifyQa, type QaTopic } from './qa-topics.ts';
 import {
   buildStandardIndex,
@@ -407,6 +407,8 @@ export interface ProjectContext {
 
 export interface BuildOptions {
   announcementGuid: string;
+  /** 项目标题，用于匹配私有清单库（bid_boq_item 没有 announcement_guid） */
+  title?: string | null;
   /** 用户显式指定的项目类型；null 表示未指定（则不判强制规范漏引） */
   projectType?: string | null;
   topics: QaTopic[];
@@ -450,16 +452,42 @@ export function buildProjectContext(db: DatabaseSync, bid: BidDoc, opts: BuildOp
   if (!standards.typeKnown) notes.push('未指定项目类型，不判强制规范漏引');
 
   // ---- 清单 ----
-  // 只有 4.5% 的招标附件里带 Excel 清单，拿不到是常态，不是失败
+  // 先看公开附件（只有 4.5% 的 zip 含 Excel），没有再退回私有清单库
+  // （bid_boq_item 17,803 行 / 17 个项目，没有 announcement_guid，只能按项目名匹配）
   let boq: BoqSignal | null = null;
   try {
     boq = loadProjectBoq(db, opts.announcementGuid);
   } catch (e) {
-    notes.push(`清单解析失败：${String(e).slice(0, 60)}`);
+    notes.push(`公开附件清单解析失败：${String(e).slice(0, 60)}`);
   }
-  if (boq === null) notes.push('本项目没有 zip 附件，无法从清单推导施工方案');
-  else if (boq.schemes.length === 0) notes.push(boq.note ?? '附件里没有可解析的工程量清单');
-  else {
+
+  let priv: BoqSignal | null = null;
+  if (!boq || boq.schemes.length === 0) {
+    try {
+      priv = loadPrivateBoq(db, opts.title ?? null);
+    } catch (e) {
+      notes.push(`私有清单匹配失败：${String(e).slice(0, 60)}`);
+    }
+  }
+
+  if (boq && boq.schemes.length > 0) {
+    if (priv && priv.schemes.length > 0) {
+      // 两边都有：合并方案（按名称去重，保留公开侧的计数）
+      const seen = new Set(boq.schemes.map((s) => s.scheme));
+      for (const s of priv.schemes) if (!seen.has(s.scheme)) boq.schemes.push(s);
+      boq.source = 'both';
+    }
+  } else if (priv && priv.schemes.length > 0) {
+    boq = priv;
+  }
+
+  if (!boq || boq.schemes.length === 0) {
+    notes.push(
+      boq === null
+        ? '本项目既没有 zip 附件，私有清单库里也没有同名项目'
+        : (boq.note ?? '附件与私有库里都没有可解析的工程量清单'),
+    );
+  } else {
     // 闭环：清单说要写这些方案，标书里到底写了没有
     boq.coverage = checkSchemeCoverage(bid, boq.schemes);
     const miss = boq.coverage.filter((c) => !c.covered).length;

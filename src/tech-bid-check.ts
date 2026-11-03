@@ -178,6 +178,7 @@ if (GUID || TITLE) {
       try {
         ctx = buildProjectContext(db, bid, {
           announcementGuid: row.ag,
+          title: row.title,
           projectType: PROJECT_TYPE,
           topics: loadQaTopics(),
           clarifications,

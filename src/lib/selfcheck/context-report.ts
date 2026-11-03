@@ -83,10 +83,16 @@ export function renderContextSection(ctx: ProjectContext): string {
     out.push(`（${esc(boq.note ?? '附件里没有可解析的工程量清单')}）`);
     out.push('');
   } else {
+    const srcLabel =
+      boq.source === 'private'
+        ? '**私有清单库**（按项目名匹配）'
+        : boq.source === 'both'
+          ? '**公开附件 + 私有清单库**'
+          : '**招标附件 zip**';
     out.push(
-      `> 从招标附件里的工程量清单推导（编码前 4 位 = 专业 + 章）：` +
-        `${boq.parsedZips} 个 zip 解析出 ${boq.rows.toLocaleString('zh-CN')} 项清单，` +
-        `映射到 ${boq.schemes.length} 类施工方案` +
+      `> 来源：${srcLabel}｜` +
+        (boq.source === 'private' ? '' : `${boq.parsedZips} 个 zip / `) +
+        `${boq.rows.toLocaleString('zh-CN')} 项清单 → ${boq.schemes.length} 类施工方案` +
         (boq.unmapped ? `（${boq.unmapped} 项编码未在映射表内）` : ''),
     );
     out.push(

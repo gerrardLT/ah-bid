@@ -55,6 +55,8 @@ export interface BoqSignal {
   schemes: SchemeHit[];
   /** 每个方案在标书里的覆盖情况；只有 buildProjectContext 会填（它拿得到 BidDoc） */
   coverage?: CoverageHit[];
+  /** 清单来源：公开附件 zip / 私有清单库 / 两者都有 */
+  source: 'public' | 'private' | 'both';
   note?: string;
 }
 
@@ -170,12 +172,49 @@ export function loadProjectBoq(db: DatabaseSync, announcementGuid: string): BoqS
       rows: 0,
       unmapped: 0,
       schemes: [],
+      source: 'public',
       note: `${zips.length} 个附件 zip 里没有可解析的工程量清单`,
     };
   }
 
   const { schemes, unmapped } = groupBoq(rows);
-  return { zips: zips.length, parsedZips, rows: rows.length, unmapped, schemes };
+  return { zips: zips.length, parsedZips, rows: rows.length, unmapped, schemes, source: 'public' };
+}
+
+/**
+ * 私有清单库：bid_boq_item 有 17,803 行 / 17 个项目，但没有 announcement_guid，
+ * 只能按项目名匹配。
+ *
+ * 匹配规则：项目名（去空白后 ≥6 字）是公告标题的子串，或反之；多个命中取最长的
+ * ——避免「供电工程」这种短名把不相干的项目配进来。
+ */
+export function loadPrivateBoq(db: DatabaseSync, title: string | null): BoqSignal | null {
+  if (!title) return null;
+  const norm = (s: string): string => s.replace(/[\s　]/g, '');
+  const t = norm(title);
+
+  const projects = db.prepare('SELECT DISTINCT project FROM bid_boq_item').all() as Array<{
+    project: string;
+  }>;
+  let best: string | null = null;
+  let bestLen = 0;
+  for (const { project } of projects) {
+    const p = norm(project ?? '');
+    if (p.length < 6) continue;
+    if ((t.includes(p) || p.includes(t)) && p.length > bestLen) {
+      best = project;
+      bestLen = p.length;
+    }
+  }
+  if (!best) return null;
+
+  const rows = db
+    .prepare('SELECT code, name, feature, unit, qty FROM bid_boq_item WHERE project = ?')
+    .all(best) as BoqRow[];
+  if (rows.length === 0) return null;
+
+  const { schemes, unmapped } = groupBoq(rows);
+  return { zips: 0, parsedZips: 0, rows: rows.length, unmapped, schemes, source: 'private' };
 }
 
 // ---------------------------------------------------------------- 覆盖检查
