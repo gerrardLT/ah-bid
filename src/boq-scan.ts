@@ -14,10 +14,10 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { parseCsv } from './lib/selfcheck/compile-rules.ts';
+import { loadSchemeMap, type BoqRow } from './lib/boq-signal.ts';
 
 const argOf = (k: string): string | undefined => {
   const hit = process.argv.find((a) => a.startsWith(`--${k}=`));
@@ -26,45 +26,7 @@ const argOf = (k: string): string | undefined => {
 const OUT = argOf('out');
 const LIMIT = Number(argOf('limit') ?? 0);
 
-interface Scheme {
-  prefix: string;
-  name: string;
-  profession: string;
-  scheme: string;
-}
-interface BoqRow {
-  code: string;
-  name: string;
-  feature: string;
-  unit: string;
-  qty: number;
-}
-
-function loadMap(): Map<string, Scheme> {
-  const rows = parseCsv(readFileSync('rules/boq/scheme-map.csv', 'utf8').replace(/^\uFEFF/, ''));
-  const h = rows[0].map((x) => x.trim());
-  const i = {
-    prefix: h.indexOf('prefix'),
-    name: h.indexOf('name'),
-    profession: h.indexOf('profession'),
-    scheme: h.indexOf('scheme'),
-  };
-  for (const [k, v] of Object.entries(i)) {
-    if (v < 0) throw new Error(`scheme-map.csv 缺少列「${k}」`);
-  }
-  const m = new Map<string, Scheme>();
-  for (const r of rows.slice(1)) {
-    const p = (r[i.prefix] ?? '').trim();
-    if (!p) continue;
-    m.set(p, {
-      prefix: p,
-      name: (r[i.name] ?? '').trim(),
-      profession: (r[i.profession] ?? '').trim(),
-      scheme: (r[i.scheme] ?? '').trim(),
-    });
-  }
-  return m;
-}
+// 类型与映射表加载统一在 src/lib/boq-signal.ts —— 与自检器共用同一份实现
 
 const py = (args: string[]): string =>
   execFileSync('python', args, {
@@ -73,7 +35,7 @@ const py = (args: string[]): string =>
     env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
   });
 
-const map = loadMap();
+const map = loadSchemeMap();
 const index = JSON.parse(py(['src/boq-index.py'])) as Array<{
   path: string;
   file: string;

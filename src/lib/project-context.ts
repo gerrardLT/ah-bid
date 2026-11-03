@@ -14,6 +14,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 
 import type { BidDoc } from './bid-text.ts';
+import { loadProjectBoq, type BoqSignal } from './boq-signal.ts';
 import { classifyQa, type QaTopic } from './qa-topics.ts';
 import {
   buildStandardIndex,
@@ -398,6 +399,8 @@ export interface ProjectContext {
   schedule: ScheduleSignal;
   limit: LimitSignal;
   standards: StandardSignal;
+  /** 清单推导的施工方案；null = 没有 zip 附件，schemes 空 = 有附件但无可用清单 */
+  boq: BoqSignal | null;
   /** 所有降级原因，按发生顺序 */
   notes: string[];
 }
@@ -446,6 +449,17 @@ export function buildProjectContext(db: DatabaseSync, bid: BidDoc, opts: BuildOp
   if (!standards.located) notes.push('未找到「编制依据」章节，已全文检索，不判漏引');
   if (!standards.typeKnown) notes.push('未指定项目类型，不判强制规范漏引');
 
+  // ---- 清单 ----
+  // 只有 4.5% 的招标附件里带 Excel 清单，拿不到是常态，不是失败
+  let boq: BoqSignal | null = null;
+  try {
+    boq = loadProjectBoq(db, opts.announcementGuid);
+  } catch (e) {
+    notes.push(`清单解析失败：${String(e).slice(0, 60)}`);
+  }
+  if (boq === null) notes.push('本项目没有 zip 附件，无法从清单推导施工方案');
+  else if (boq.schemes.length === 0) notes.push(boq.note ?? '附件里没有可解析的工程量清单');
+
   return {
     announcementGuid: opts.announcementGuid,
     projectType: opts.projectType ?? null,
@@ -453,6 +467,7 @@ export function buildProjectContext(db: DatabaseSync, bid: BidDoc, opts: BuildOp
     schedule,
     limit,
     standards,
+    boq,
     notes,
   };
 }

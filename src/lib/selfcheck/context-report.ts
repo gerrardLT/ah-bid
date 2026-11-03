@@ -4,7 +4,9 @@
  * 独立于 report.ts：那边是「规则诊断」的展示，这里是「工程本体」的展示。
  * 分开的好处是 report.ts 的表格结构与排序完全不受影响（零回归）。
  *
- * 展示顺序按"越可执行越靠前"：关注点 → 态势 → 规范。
+ * 展示顺序按"越可执行越靠前"：
+ *   关注点（项目在问什么）→ 清单方案（这个项目有哪些活）→ 态势（紧不紧）→ 规范（引对没）
+ *
  * 每节都带分母（n）、来源与降级原因；没有分母的百分比一律不出现。
  */
 
@@ -70,8 +72,43 @@ export function renderContextSection(ctx: ProjectContext): string {
     }
   }
 
-  // ---------------- 二、工期/限价态势 ----------------
-  out.push('## 二、工期与限价态势');
+  // ---------------- 二、清单要求的施工方案 ----------------
+  out.push('## 二、本项目清单要求的施工方案');
+  out.push('');
+  const boq = ctx.boq;
+  if (!boq) {
+    out.push('（本项目没有 zip 附件，无法从清单推导施工方案）');
+    out.push('');
+  } else if (boq.schemes.length === 0) {
+    out.push(`（${esc(boq.note ?? '附件里没有可解析的工程量清单')}）`);
+    out.push('');
+  } else {
+    out.push(
+      `> 从招标附件里的工程量清单推导（编码前 4 位 = 专业 + 章）：` +
+        `${boq.parsedZips} 个 zip 解析出 ${boq.rows.toLocaleString('zh-CN')} 项清单，` +
+        `映射到 ${boq.schemes.length} 类施工方案` +
+        (boq.unmapped ? `（${boq.unmapped} 项编码未在映射表内）` : ''),
+    );
+    out.push(
+      '> ⚠ 只判断「**有没有这类活**」；工程量为原始累加未校核，不在此展示；' +
+        '地方补充编码（非国标 12 位）可能误落入相邻章节。',
+    );
+    out.push('');
+    out.push('| 专业 | 施工方案 | 清单项数 | 主要分项 |');
+    out.push('|---|---|---|---|');
+    for (const s of boq.schemes) {
+      out.push(`| ${esc(s.profession)} | ${esc(s.scheme)} | ${s.count} | ${esc(s.top.join('、') || '—')} |`);
+    }
+    out.push('');
+    out.push(
+      '> 清单里有这些分项，技术标就必须有对应的施工方案——' +
+        '这是评委判断「针对性」最直接的地方（他们知道这个工程有什么活）。',
+    );
+    out.push('');
+  }
+
+  // ---------------- 三、工期/限价态势 ----------------
+  out.push('## 三、工期与限价态势');
   out.push('');
   const s = ctx.schedule;
   const lim = ctx.limit;
@@ -102,8 +139,8 @@ export function renderContextSection(ctx: ProjectContext): string {
   );
   out.push('');
 
-  // ---------------- 三、规范符合性 ----------------
-  out.push('## 三、规范符合性（编制依据章节）');
+  // ---------------- 四、规范符合性 ----------------
+  out.push('## 四、规范符合性（编制依据章节）');
   out.push('');
   const st = ctx.standards;
   if (st.cited === 0) {

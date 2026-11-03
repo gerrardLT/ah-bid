@@ -31,6 +31,7 @@ function ctxOf(over: Partial<ProjectContext> = {}): ProjectContext {
       typeKnown: false,
       confidence: 'low',
     },
+    boq: null,
     notes: [],
     ...over,
   };
