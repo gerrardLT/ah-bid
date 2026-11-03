@@ -31,6 +31,7 @@ import { renderContextSection } from './lib/selfcheck/context-report.ts';
 import { diagnose, tally } from './lib/selfcheck/diagnose.ts';
 import { buildJson, renderMarkdown, type ReportInput, type TenderMeta } from './lib/selfcheck/report.ts';
 import { loadRules, summarize, validateRules } from './lib/selfcheck/rules.ts';
+import { renderActionList } from './lib/selfcheck/summary.ts';
 import {
   loadClarifications,
   loadRejectItems,
@@ -220,7 +221,9 @@ const text = AS_JSON
       null,
       2,
     )
-  : renderMarkdown(input) + (ctx ? renderContextSection(ctx) : '');
+  : renderActionList({ diag: result, ctx, ruleset, totalLines: bid.lines.length }) +
+    renderMarkdown(input) +
+    (ctx ? renderContextSection(ctx) : '');
 
 if (OUT) {
   mkdirSync(dirname(OUT), { recursive: true });
