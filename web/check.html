@@ -99,6 +99,27 @@ td.k{white-space:nowrap;color:var(--ink-3);font:11.5px var(--m)}
 .err{border:1px solid var(--bad);background:#FFF6F3;color:#8A2A12;padding:10px 14px;margin-bottom:14px;font-size:13px;white-space:pre-wrap}
 .tip{font-size:12px;color:var(--ink-3);margin:0 0 10px;padding-left:2px}
 
+/* 历史勾选与对比 */
+.hist li{display:flex;gap:7px;align-items:flex-start}
+.hist .pick{margin-top:6px;accent-color:var(--accent);flex:none}
+.hist .hbody{flex:1;min-width:0}
+button.cmp{width:100%;margin-top:8px;padding:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);font:600 12.5px var(--f);cursor:pointer;display:none}
+button.cmp:hover{background:var(--accent);color:#fff}
+
+/* 原文抽屉 */
+.drawer{position:fixed;inset:0;background:rgba(10,10,9,.26);display:none;z-index:50}
+.drawer.on{display:block}
+.drawer .panel{position:absolute;right:0;top:0;bottom:0;width:min(680px,92vw);background:var(--panel);border-left:1px solid var(--line);overflow:auto;padding:16px 18px}
+.drawer h3{margin:0 0 10px;font-size:13px;display:flex;align-items:center;gap:8px}
+.drawer h3 b{flex:1;font-weight:600}
+.drawer .x{cursor:pointer;color:var(--ink-3);font:18px var(--m);padding:0 6px;line-height:1}
+.drawer pre{margin:0;font:12.5px/1.75 var(--m);white-space:pre-wrap;word-break:break-word}
+.drawer .ln{display:flex;gap:10px;padding:1px 4px}
+.drawer .ln i{color:var(--ink-3);min-width:34px;text-align:right;font-style:normal;user-select:none;flex:none}
+.drawer .ln.hit{background:#FFF3EC}
+.drawer .ln.hit i{color:var(--accent);font-weight:600}
+a.lnk{color:var(--accent);text-decoration:none;cursor:pointer;border-bottom:1px dotted var(--accent)}
+
 /* 窄屏：左栏变全宽、右栏堆叠。
    实测 482px 视口下，288px 固定左栏会把 KPI 压成竖排 —— 必须处理。 */
 @media (max-width:900px){
@@ -142,6 +163,7 @@ td.k{white-space:nowrap;color:var(--ink-3);font:11.5px var(--m)}
     <div class="hist">
       <h2>最近检查</h2>
       <ul id="hist"><li class="mt">（暂无）</li></ul>
+      <button class="cmp" id="cmp">对比选中的两次</button>
     </div>
   </aside>
 
@@ -150,10 +172,57 @@ td.k{white-space:nowrap;color:var(--ink-3);font:11.5px var(--m)}
   </section>
 </main>
 
+<div class="drawer" id="drawer">
+  <div class="panel">
+    <h3><b id="dtitle">原文</b><span class="x" id="dclose">×</span></h3>
+    <div id="dbody"></div>
+  </div>
+</div>
+
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let picked = null;
+let CUR = null; // 当前结果对应的历史文件名；点证据行号时要靠它去取原文
+
+// ---------- 原文抽屉 ----------
+function closeDrawer() { $('drawer').classList.remove('on'); }
+$('dclose').onclick = closeDrawer;
+$('drawer').onclick = (e) => { if (e.target.id === 'drawer') closeDrawer(); };
+
+// 事件委托：明细表里的 L123 是可点的，但表格每次渲染都会重建，绑在容器上只绑一次
+$('out').addEventListener('click', (e) => {
+  const a = e.target.closest('a.lnk');
+  if (a) openText(Number(a.dataset.l));
+});
+
+async function openText(line) {
+  if (!CUR) { alert('这条结果是历史回放，没有原文可定位'); return; }
+  $('dtitle').textContent = '原文定位 · L' + line;
+  $('dbody').innerHTML = '<div class="tip">载入中…</div>';
+  $('drawer').classList.add('on');
+  try {
+    const j = await (await fetch('/api/checks/text?f=' + encodeURIComponent(CUR))).json();
+    if (!j.ok) throw new Error(j.error || '取不到原文');
+    const lines = j.lines || [];
+    const i = line - 1;
+    const from = Math.max(0, i - 8);
+    const to = Math.min(lines.length - 1, i + 8);
+    let h = '<pre>';
+    for (let k = from; k <= to; k++) {
+      const hit = k === i ? ' hit' : '';
+      h += `<div class="ln${hit}"><i>${k + 1}</i><span>${esc(lines[k] ?? '')}</span></div>`;
+    }
+    h += '</pre>';
+    if (i < 0 || i >= lines.length) h = '<div class="tip">行号超出原文范围（' + lines.length + ' 行）</div>' + h;
+    $('dbody').innerHTML = h;
+        // 高亮行可能在视口外（点 L800 时），渲染后滚到中间
+        const hit = $('dbody').querySelector('.ln.hit');
+        if (hit) hit.scrollIntoView({ block: 'center' });
+  } catch (e) {
+    $('dbody').innerHTML = `<div class="err">${esc(e.message)}</div>`;
+  }
+}
 
 // ---------- 选文件 ----------
 $('drop').onclick = () => $('file').click();
@@ -184,6 +253,7 @@ $('go').onclick = async () => {
     const r = await fetch('/api/check?' + qs.toString(), { method: 'POST', body: picked });
     const j = await r.json();
     if (!j.ok) throw new Error(j.error || '自检失败');
+    CUR = (j.file || null);
     render(j.data);
     loadHist();
   } catch (e) {
@@ -255,7 +325,9 @@ function diagTable(diags) {
     : x === 'mentioned' ? '<span class="st warn">有标题无证据</span>'
     : '<span class="st bad">缺失</span>';
   const rows = diags.map((d) => {
-    const ev = (d.hits && d.hits[0]) ? `L${d.hits[0].line} ${esc((d.hits[0].snippet || '').slice(0, 46))}`
+    const h = d.hits && d.hits[0];
+    const ev = h
+      ? `<a class="lnk" data-l="${h.line}" title="点开看原文">L${h.line}</a> ${esc((h.snippet || '').slice(0, 46))}`
       : (d.missing && d.missing[0] ? '缺：' + esc(d.missing[0]) : '—');
     return `<tr><td>${esc(d.title)}</td><td>${st(d.state)}</td><td class="k">${ev}</td></tr>`;
   }).join('');
@@ -299,25 +371,87 @@ function ctxBlock(ctx) {
 }
 
 // ---------- 历史 ----------
+function fmtTime(t) {
+  return esc((t || '').replace(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$/, '$1-$2-$3 $4:$5'));
+}
+
 async function loadHist() {
   try {
     const j = await (await fetch('/api/checks')).json();
     const items = (j.items || []);
     if (!items.length) { $('hist').innerHTML = '<li class="mt">（暂无）</li>'; return; }
     $('hist').innerHTML = items.map((x) =>
-      `<li data-f="${esc(x.file)}"><span class="nm">${esc(x.name || '')}</span>`
-      + `<span class="mt">${esc((x.time || '').replace(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$/, '$1-$2-$3 $4:$5'))}`
-      + ` · 覆盖 ${x.covered ?? '-'} / 缺 ${x.missing ?? '-'}</span></li>`
+      `<li data-f="${esc(x.file)}">
+         <input type="checkbox" class="pick" value="${esc(x.file)}">
+         <div class="hbody">
+           <span class="nm">${esc(x.name || '')}</span>
+           <span class="mt">${fmtTime(x.time)} · 覆盖 ${x.covered ?? '-'} / 缺 ${x.missing ?? '-'}</span>
+         </div>
+       </li>`
     ).join('');
+
     [...$('hist').querySelectorAll('li[data-f]')].forEach((li) => {
-      li.onclick = async () => {
+      li.querySelector('.hbody').onclick = async () => {
         const r = await fetch('/api/checks/get?f=' + encodeURIComponent(li.dataset.f));
         const jj = await r.json();
-        if (jj.ok) render(jj.data.data);
+        if (jj.ok) { CUR = li.dataset.f; render(jj.data.data); }
         else $('out').innerHTML = `<div class="err">${esc(jj.error)}</div>`;
       };
     });
+    [...$('hist').querySelectorAll('.pick')].forEach((c) => (c.onchange = (ev) => updatePick(ev)));
+    updatePick();
   } catch (e) { /* 历史加载失败不影响主流程 */ }
+}
+
+function updatePick(ev) {
+  const picks = [...document.querySelectorAll('#hist .pick:checked')];
+  if (picks.length > 2) { // 只允许对比两个，第三个点下去自动弹回
+    if (ev && ev.target) ev.target.checked = false;
+    return;
+  }
+  const vals = picks.map((x) => x.value);
+  $('cmp').style.display = vals.length === 2 ? 'block' : 'none';
+  $('cmp').dataset.a = vals[0] || '';
+  $('cmp').dataset.b = vals[1] || '';
+}
+
+$('cmp').onclick = () => showDiff($('cmp').dataset.a, $('cmp').dataset.b);
+
+async function showDiff(a, b) {
+  $('out').innerHTML = '<div class="empty">正在对比…</div>';
+  let j;
+  try {
+    j = await (await fetch(`/api/checks/diff?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`)).json();
+  } catch (e) {
+    $('out').innerHTML = `<div class="err">${esc(e.message)}</div>`;
+    return;
+  }
+  if (!j.ok) { $('out').innerHTML = `<div class="err">${esc(j.error)}</div>`; return; }
+  CUR = null;
+
+  const A = j.a.summary || {}, B = j.b.summary || {};
+  const d = (k) => Number(B[k] ?? 0) - Number(A[k] ?? 0);
+  const delta = (n) => n > 0 ? `<span class="st ok">+${n}</span>` : n < 0 ? `<span class="st bad">${n}</span>` : '<span class="st">±0</span>';
+
+  let h = '<div class="kpi">'
+    + `<div><b>${B.covered ?? '-'}</b><span>覆盖 ${delta(d('covered'))}</span></div>`
+    + `<div class="w"><b>${B.mentioned ?? '-'}</b><span>有标题无证据 ${delta(d('mentioned'))}</span></div>`
+    + `<div><b>${B.missing ?? '-'}</b><span>缺失 ${delta(d('missing'))}</span></div>`
+    + `<div class="b"><b>${B.rejectRisk ?? '-'}</b><span>废标风险 ${delta(d('rejectRisk'))}</span></div>`
+    + '</div>';
+  h += `<h2 class="sec">改稿对比<em>${fmtTime(j.a.time)} → ${fmtTime(j.b.time)}</em></h2>`;
+  h += diffCard('🟢 已修好', 'ok', j.fixed, (x) => `${x.title}（${x.from === 'missing' ? '缺失' : '有标题无证据'} → 已覆盖）`);
+  h += diffCard('🔴 改坏了', 'reject', j.broke, (x) => `${x.title}（已覆盖 → ${x.to === 'missing' ? '缺失' : '有标题无证据'}）`);
+  h += diffCard('⚪ 还没动', '', j.still, (x) => x.title);
+  if (!j.fixed.length && !j.broke.length && !j.still.length) h += '<div class="tip">两次结果的检查项完全一致。</div>';
+  $('out').innerHTML = h;
+}
+
+function diffCard(title, cls, items, fmt) {
+  if (!items || !items.length) return '';
+  const list = items.slice(0, 12).map((x) => `<li>${esc(fmt(x))}</li>`).join('');
+  const more = items.length > 12 ? `<div class="more">还有 ${items.length - 12} 条</div>` : '';
+  return `<div class="card ${cls}"><h3>${title}<i>${items.length}</i></h3><ul>${list}</ul>${more}</div>`;
 }
 
 loadHist();

@@ -343,9 +343,28 @@ def run_check(data: bytes, name: str, guid: str, ptype: str) -> dict:
         if r.returncode != 0:
             return {"ok": False, "error": (r.stderr or r.stdout or "自检失败")[-1200:]}
         try:
-            return {"ok": True, "data": json.loads(r.stdout)}
+            parsed = json.loads(r.stdout)
         except json.JSONDecodeError:
             return {"ok": False, "error": "自检输出不是合法 JSON，请用 CLI 排查"}
+        # 注意：这里不能把 json 结果赋值给 data —— data 是入参（文件字节），
+        # 覆盖后下面的 data.decode() 会抛 AttributeError 并被 except 吞掉，
+        # 表现为「明明上传成功但没有原文」。用 parsed 单独存。
+        # 另存一份纯文本：前端点证据行号时要能跳回原文定位。
+        # 复用 docx-text.py，保证和诊断用的是同一套解析（表格按 `a | b | c` 保留列边界）。
+        text = ""
+        try:
+            if ext in (".docx", ".doc"):
+                tr = subprocess.run(
+                    ["python", "src/docx-text.py", tmp],
+                    capture_output=True, text=True, encoding="utf-8", errors="replace",
+                    cwd=PROJ, timeout=120,
+                )
+                text = tr.stdout if tr.returncode == 0 else ""
+            else:
+                text = data.decode("utf-8", "replace")
+        except Exception:
+            text = ""
+        return {"ok": True, "data": parsed, "text": text}
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": "自检超过 180 秒（清单解析可能卡住），请改用 CLI 加 --no-context"}
     finally:
@@ -355,7 +374,7 @@ def run_check(data: bytes, name: str, guid: str, ptype: str) -> dict:
             pass
 
 
-def save_check(name: str, guid: str, ptype: str, data: dict) -> str:
+def save_check(name: str, guid: str, ptype: str, data: dict, text: str = "") -> str:
     os.makedirs(CHECKS_DIR, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     stem = re.sub(r"[^\w\u4e00-\u9fff.-]+", "_", os.path.splitext(name)[0])[:40] or "check"
@@ -365,6 +384,11 @@ def save_check(name: str, guid: str, ptype: str, data: dict) -> str:
             {"time": ts, "name": name, "guid": guid, "projectType": ptype, "data": data},
             f, ensure_ascii=False,
         )
+    # 原文另存 .txt（与 json 同名），点行号时按需拉取。
+    # 不塞进 JSON：一份标书几万字，30 条历史会撑到几十 MB。
+    if text:
+        with open(path[:-5] + ".txt", "w", encoding="utf-8") as f:
+            f.write(text)
     return path
 
 
@@ -405,6 +429,56 @@ def get_check(fn: str) -> dict:
         return {"ok": True, "data": json.load(f)}
 
 
+def get_check_text(fn: str) -> dict:
+    """取出这次检查时的标书原文（按行），用于点证据行号定位。"""
+    if not fn or "/" in fn or "\\" in fn or not fn.endswith(".json"):
+        return {"ok": False, "error": "非法文件名"}
+    fp = os.path.join(CHECKS_DIR, fn[:-5] + ".txt")
+    if not os.path.exists(fp):
+        return {"ok": False, "error": "这次检查没有存原文（旧记录不支持定位）"}
+    with open(fp, encoding="utf-8") as f:
+        return {"ok": True, "lines": f.read().split("\n")}
+
+
+def diff_checks(fa: str, fb: str) -> dict:
+    """两次检查的差异：修好了哪些、改坏了哪些、还没动的。
+
+    只比 state（covered/mentioned/missing），不比证据内容 ——
+    「证据从 L120 换到 L135」不是改稿，是排版动了。
+    """
+    a = get_check(fa)
+    b = get_check(fb)
+    if not a.get("ok") or not b.get("ok"):
+        return {"ok": False, "error": "文件不存在"}
+
+    pa = a["data"]["data"] if "data" in a["data"] else {}
+    pb = b["data"]["data"] if "data" in b["data"] else {}
+    sa = {d["checkId"]: d for d in (pa.get("diagnoses") or [])}
+    sb = {d["checkId"]: d for d in (pb.get("diagnoses") or [])}
+
+    fixed, broke, still = [], [], []
+    for cid, d in sa.items():
+        e = sb.get(cid)
+        if not e:
+            continue
+        x, y = d.get("state"), e.get("state")
+        if x != "covered" and y == "covered":
+            fixed.append({"id": cid, "title": d.get("title"), "from": x})
+        elif x == "covered" and y != "covered":
+            broke.append({"id": cid, "title": e.get("title"), "to": y})
+        elif x != "covered" and y != "covered":
+            still.append({"id": cid, "title": d.get("title"), "state": y})
+
+    return {
+        "ok": True,
+        "a": {"time": a["data"].get("time"), "name": a["data"].get("name"), "summary": pa.get("summary")},
+        "b": {"time": b["data"].get("time"), "name": b["data"].get("name"), "summary": pb.get("summary")},
+        "fixed": fixed,
+        "broke": broke,
+        "still": still,
+    }
+
+
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -434,6 +508,10 @@ class H(BaseHTTPRequestHandler):
                 return self._send(list_checks())
             if p == "/api/checks/get":
                 return self._send(get_check(one("f", "")))
+            if p == "/api/checks/text":
+                return self._send(get_check_text(one("f", "")))
+            if p == "/api/checks/diff":
+                return self._send(diff_checks(one("a", ""), one("b", "")))
             if p == "/api/schema":
                 return self._send({"groups": schema(), "stats": overview()})
             if p == "/api/rows":
@@ -544,9 +622,11 @@ class H(BaseHTTPRequestHandler):
         res = run_check(data, name, guid, ptype)
         if res.get("ok"):
             try:
-                save_check(name, guid, ptype, res["data"])
+                saved = save_check(name, guid, ptype, res["data"], res.get("text") or "")
+                res["file"] = os.path.basename(saved)
             except Exception:
                 pass  # 存历史失败不影响这次结果
+            res.pop("text", None)  # 原文太大，不回传给前端
         return self._send(res, 200 if res.get("ok") else 422)
 
 if __name__ == "__main__":
