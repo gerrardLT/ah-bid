@@ -153,6 +153,25 @@ node --no-warnings src/backfill-scoring-full.ts            # 全量（约 1 小�
 node --no-warnings src/backfill-scoring-full.ts --limit=50 # 先跑一批
 ```
 
+## 资源约束（跑重任务前必看）
+
+全量解析、批量下载/解压、大文件合并这类任务，先探资源再决定跑法：
+
+```powershell
+# 一键探测：可用内存、占用最高的进程、各盘剩余空间与写入预算
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\resource-preflight.ps1
+
+# 附带量一下某个目录体积（大目录递归较慢，先小范围试）
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\resource-preflight.ps1 -Path data\attachments
+```
+
+判定口径（完整规范见 `AGENTS.md` R1–R4）：
+
+- 内存峰值 > 可用内存 50%，或单次磁盘写入 > 剩余空间 20% 且 > 5 GB → **先报告预估再执行**
+- 能流式/分块就不要全量载入（`chunksize`、`read_only=True`、逐行 jsonl、`executemany` + 显式事务）
+
+`data/attachments`（26.96 GB）和 8,013 个未处理 PDF 这类输入，默认按高负荷对待。
+
 ## 数据生产（一般不用跑）
 
 已有的数据不动就别重跑，这些都是几十分钟到几小时的任务。

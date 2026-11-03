@@ -10,6 +10,7 @@
  * 每节都带分母（n）、来源与降级原因；没有分母的百分比一律不出现。
  */
 
+import { loadSchemeOutline } from '../boq-signal.ts';
 import type { ProjectContext } from '../project-context.ts';
 
 function esc(s: string): string {
@@ -130,6 +131,26 @@ export function renderContextSection(ctx: ProjectContext): string {
         );
       }
       out.push('');
+
+      // 缺失的怎么补：给分段结构，不给正文
+      const missNames = ordered2.filter((c) => !c.covered).map((c) => c.scheme);
+      if (missNames.length) {
+        const outline = loadSchemeOutline();
+        out.push('### 缺失方案该写哪几段');
+        out.push('');
+        out.push(
+          '> 施工方案的通用结构是「材料规格 → 施工工艺 → 质量控制 → 试验调试」，' +
+            '各专业只是换名词。**每段都要能对上一个清单分项**，评委就是这么核的。',
+        );
+        out.push('');
+        out.push('| 施工方案 | 建议分段 |');
+        out.push('|---|---|');
+        for (const name of missNames) {
+          const sec = outline.get(name);
+          out.push(`| ${esc(name)} | ${sec ? esc(sec.join(' · ')) : '（分段模板未收录）'} |`);
+        }
+        out.push('');
+      }
     }
 
     out.push(

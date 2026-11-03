@@ -230,6 +230,38 @@ export interface CoverageHit {
 
 let cachedEvidence: Map<string, string[]> | null = null;
 
+let cachedOutline: Map<string, string[]> | null = null;
+
+/**
+ * 方案 → 建议分段（施工方案的标准结构）。
+ *
+ * 这是行业知识，不是从数据里挖的：施工方案的写法本身就是
+ * 材料规格 → 施工工艺 → 质量控制 → 试验调试 这条线，
+ * 各专业只是换了名词。评委看的就是这条线全不全。
+ */
+export function loadSchemeOutline(): Map<string, string[]> {
+  if (cachedOutline) return cachedOutline;
+  const rows = parseCsv(readFileSync('rules/boq/scheme-outline.csv', 'utf8').replace(/^\uFEFF/, ''));
+  const h = rows[0].map((x) => x.trim());
+  const si = h.indexOf('scheme');
+  const ki = h.indexOf('sections');
+  if (si < 0 || ki < 0) throw new Error('scheme-outline.csv 缺少 scheme/sections 列');
+  const m = new Map<string, string[]>();
+  for (const r of rows.slice(1)) {
+    const s = (r[si] ?? '').trim();
+    if (!s) continue;
+    m.set(
+      s,
+      (r[ki] ?? '')
+        .split('|')
+        .map((x) => x.trim())
+        .filter(Boolean),
+    );
+  }
+  cachedOutline = m;
+  return m;
+}
+
 /** 方案 → 标书里该出现的关键词 */
 export function loadSchemeEvidence(): Map<string, string[]> {
   if (cachedEvidence) return cachedEvidence;
