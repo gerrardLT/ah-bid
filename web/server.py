@@ -471,6 +471,14 @@ def project_detail(guid: str) -> dict:
     )
     docs = _rows(cur, "SELECT * FROM tender_doc WHERE announcement_guid = ? LIMIT 1", (guid,))
     doc = docs[0] if docs else None
+    # 资格条件（从正文抽的，8,494 条里 5,008 条能抽出资质要求）
+    clauses = _rows(
+        cur,
+        "SELECT qualification, builder, performance, joint_venture, qual_text, confidence, reason "
+        "FROM announcement_clause WHERE announcement_guid = ? LIMIT 1",
+        (guid,),
+    )
+    clause = clauses[0] if clauses else None
     clar = _rows(
         cur,
         "SELECT seq, question, answer, affects FROM clarification_qa "
@@ -511,6 +519,7 @@ def project_detail(guid: str) -> dict:
             "announcement": a,
             "attachments": atts,
             "doc": doc,
+            "clause": clause,
             "clarifications": clar,
             "result": res[0] if res else None,
             "prices": prices,
@@ -760,6 +769,51 @@ def market(x: str = "winner", n: int = 1, city: str = "", ptype: str = "",
     }
 
 
+MY_BIDS = os.path.join(PROJ, "data", "my-bids.json")
+_MY_LOCK = threading.Lock()
+
+
+def my_bids_list() -> dict:
+    """我的投标记录。存文件不存库 —— server 的 index.db 连接是 query_only，
+    而「我投过哪些标」是用户私有数据，本来也不该进公共数据底座。"""
+    if not os.path.exists(MY_BIDS):
+        return {"ok": True, "items": []}
+    try:
+        with open(MY_BIDS, encoding="utf-8") as f:
+            return {"ok": True, "items": json.load(f)}
+    except Exception as e:
+        return {"ok": False, "error": f"读取失败: {e}"}
+
+
+def my_bid_save(data: dict) -> dict:
+    """upsert 一条。guid 为键；同 guid 重复提交即更新（同一个标只留最新报价）。"""
+    guid = (data.get("guid") or "").strip()
+    if not guid:
+        return {"ok": False, "error": "缺少 guid"}
+    with _MY_LOCK:
+        cur = my_bids_list()
+        items = cur.get("items") or []
+        rec = {
+            "guid": guid,
+            "title": (data.get("title") or "").strip()[:120],
+            "myPrice": data.get("myPrice"),
+            "result": data.get("result") or "pending",
+            "note": (data.get("note") or "").strip()[:200],
+            "at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        }
+        idx = next((i for i, x in enumerate(items) if x.get("guid") == guid), -1)
+        if idx >= 0:
+            items[idx] = rec
+        else:
+            items.append(rec)
+        try:
+            with open(MY_BIDS, "w", encoding="utf-8") as f:
+                json.dump(items, f, ensure_ascii=False, indent=1)
+        except Exception as e:
+            return {"ok": False, "error": f"写入失败: {e}"}
+        return {"ok": True, "item": rec, "count": len(items)}
+
+
 def get_check_text(fn: str) -> dict:
     """取出这次检查时的标书原文（按行），用于点证据行号定位。"""
     if not fn or "/" in fn or "\\" in fn or not fn.endswith(".json"):
@@ -857,6 +911,8 @@ class H(BaseHTTPRequestHandler):
                     until=one("until", ""),
                     limit=int(one("limit", "500")),
                 ))
+            if p == "/api/my-bids":
+                return self._send(my_bids_list())
             if p == "/api/attachments/zip":
                 g0 = one("g", "")
                 path, err = zip_attachments(g0)
@@ -985,6 +1041,16 @@ class H(BaseHTTPRequestHandler):
         def one(k, d=None):
             v = qs.get(k)
             return v[0] if v else d
+
+        if u.path == "/api/my-bids":
+            n = int(self.headers.get("Content-Length") or 0)
+            if n <= 0 or n > 1024 * 1024:
+                return self._send({"ok": False, "error": "请求体为空或超过 1MB"}, 400)
+            try:
+                payload = json.loads(self.rfile.read(n).decode("utf-8", "replace"))
+            except Exception as e:
+                return self._send({"ok": False, "error": f"JSON 解析失败: {e}"}, 400)
+            return self._send(my_bid_save(payload))
 
         if u.path != "/api/check":
             return self._send({"ok": False, "error": "未知接口"}, 404)

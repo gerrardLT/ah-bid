@@ -177,16 +177,16 @@ function parseAttachments(text: string): ParsedAttach[] {
     }
   }
 
-  // 结构一：onclick 包裹，文件名在 title 属性或 file-name 子节点或链接文本
-  // 必须从 <a 开始匹配：若从 onclick 开始，后续去标签时会漏掉 onclick 本身，
-  // 把属性文本当成文件名。
-  for (const m of text.matchAll(/<a\b[^>]*onclick="ztbfjyz\('([^']+)'[\s\S]{0,800}?<\/a>/gi)) {
+  // 结构一：onclick 包裹。
+  // 原来要求必须以 <a 开头 —— 阜阳的附件行是 <span onclick="ztbfjyz(...)">，
+  // 于是 551 条公告一个附件都没抓到（附件率 0%，而合肥是 47.8%）。
+  // 放宽到任意标签，用反向引用配对闭合标签。
+  for (const m of text.matchAll(/<([a-z]+)\b[^>]*onclick="ztbfjyz\('([^']+)'[^>]*>([\s\S]{0,600}?)<\/\1>/gi)) {
     const block = m[0];
     const title = /title="([^"]+)"/.exec(block)?.[1] ?? '';
     const fileName = /class="file-name[^"]*"[^>]*>\s*([^<]+)/.exec(block)?.[1] ?? '';
-    const anchorText = /<a\b[^>]*>([\s\S]*?)<\/a>/i.exec(block)?.[1] ?? '';
-    const text = anchorText.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-    push(m[1], title || fileName || text);
+    const inner = m[3].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    push(m[2], title || fileName || inner);
   }
 
   // 结构二：普通 a 标签直接挂下载地址

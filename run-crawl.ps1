@@ -66,6 +66,11 @@ node --no-warnings src\extract-docs.ts --limit=20 2>&1 |
 node --no-warnings src\extract-deadline.ts 2>&1 |
     Out-File -Append -Encoding utf8 data\crawl.log
 
+# 资格条件抽取：项目页的「资质要求 / 建造师 / 联合体」全靠这一步。
+# 同样不 gate 退出码，失败只影响项目页的一块，不影响日报。
+node --no-warnings src\extract-clauses.ts 2>&1 |
+    Out-File -Append -Encoding utf8 data\crawl.log
+
 # 抓完立刻出日报并推送。
 # --days=2 而不是 1：跨天边界（凌晨跑时"昨天"的公告也要覆盖）。
 # 推送渠道读 data/notify.config.json，没配就只写 output/digest.md，不报错。

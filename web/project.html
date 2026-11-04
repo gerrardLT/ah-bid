@@ -207,8 +207,36 @@ function render(d) {
   }
   h += '</div></section>';
 
+  // 资格条件：从正文抽的（资质/建造师/业绩/联合体）。
+  // 抽不到就明说「未抽到」，不猜 —— 资格条件猜错的代价是白做一份标书。
+  const cl = d.clause;
+  h += '<section><h2>资格条件<em>从公告正文抽取</em></h2>';
+  if (!cl) {
+    h += '<div class="body muted">这份公告还没有抽取资格条件（抽取器未覆盖，或正文为空）</div>';
+  } else if (cl.reason) {
+    h += `<div class="body muted">正文里没有可识别的资格要求段（${esc(cl.reason)}）</div>`;
+  } else {
+    const jv = cl.joint_venture === 0 ? '<b style="color:var(--bad)">不接受</b>'
+      : cl.joint_venture === 1 ? '<b style="color:var(--ok)">接受</b>' : '<span class="muted">未提</span>';
+    h += '<div class="body"><dl>'
+      + `<dt>资质要求</dt><dd>${cl.qualification ? esc(cl.qualification) : '<span class="muted">未抽到</span>'}</dd>`
+      + `<dt>项目负责人</dt><dd>${cl.builder ? esc(cl.builder) : '<span class="muted">未抽到</span>'}</dd>`
+      + `<dt>业绩门槛</dt><dd>${cl.performance ? esc(cl.performance) : '<span class="muted">未注明</span>'}</dd>`
+      + `<dt>联合体</dt><dd>${jv}</dd>`
+      + '</dl>';
+    if (cl.qual_text) {
+      h += `<details style="margin-top:8px"><summary class="muted" style="cursor:pointer;font-size:12px">原文（点击展开）</summary>`
+        + `<div style="font-size:12.5px;line-height:1.7;color:var(--ink-2);margin-top:6px;padding:8px 10px;background:#FBFAF7;border-left:2px solid var(--line)">${esc(cl.qual_text)}</div></details>`;
+    }
+    h += '</div>';
+  }
+  h += '</section>';
+
   // 报价参考：异步加载（要跑下浮率配对，1 秒左右，不阻塞首屏）
   h += '<section><h2>报价参考<em>同类项目下浮率</em></h2><div class="body" id="pref"><span class="muted">载入中…</span></div></section>';
+
+  // 我的投标（私有数据，存 data/my-bids.json，不进公共库）
+  h += '<section><h2>我的投标<em>仅存本地</em></h2><div class="body" id="mine"><span class="muted">载入中…</span></div></section>';
 
   // 澄清
   h += `<section><h2>澄清问答<em>${clar.length} 条 · 涉评分 ${clar.filter((x) => (x.affects || '').includes('评分')).length} 条</em></h2>`;
@@ -257,6 +285,7 @@ function render(d) {
   $('out').innerHTML = h;
 
   loadPriceRef(a.guid, price);
+  loadMine(a.guid, a.title);
 
   const ex = $('expand');
   if (ex) ex.onclick = async () => {
@@ -336,6 +365,58 @@ async function loadPriceRef(guid, limit) {
     const r = 1 - v / d.limit;
     const vs = d.same ? (r > d.same.p50 ? '高于同类中位' : '低于同类中位') : '';
     o.innerHTML = `下浮 <b>${pct(r)}</b>${vs ? '（' + vs + '）' : ''}`;
+  };
+}
+
+// ---------- 我的投标 ----------
+// 私有数据：存服务器本地 data/my-bids.json，不进 index.db（那是公共数据底座）。
+async function loadMine(guid, title) {
+  const el = $('mine');
+  if (!el) return;
+  let items = [];
+  try {
+    const j = await (await fetch('/api/my-bids')).json();
+    items = j.items || [];
+  } catch (e) {
+    el.innerHTML = `<span class="muted">${esc(e.message)}</span>`;
+    return;
+  }
+  const mine = items.find((x) => x.guid === guid);
+
+  const RESULT = { pending: '待开标', won: '已中标', lost: '未中标' };
+  el.innerHTML = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <span class="muted">我的报价（万）</span>
+      <input id="mp" type="number" step="0.1" value="${mine && mine.myPrice ? (mine.myPrice / 1e4).toFixed(1) : ''}"
+        style="width:120px;padding:6px 9px;border:1px solid var(--line);font:13px var(--f)">
+      <select id="mr" style="padding:6px 9px;border:1px solid var(--line);font:13px var(--f)">
+        ${Object.entries(RESULT).map(([k, v]) => `<option value="${k}"${mine && mine.result === k ? ' selected' : ''}>${v}</option>`).join('')}
+      </select>
+      <input id="mn" placeholder="备注" value="${mine ? esc(mine.note || '') : ''}"
+        style="flex:1;min-width:140px;padding:6px 9px;border:1px solid var(--line);font:13px var(--f)">
+      <button id="msave" style="padding:6px 14px;border:1px solid var(--accent);background:var(--accent);color:#fff;font:600 12.5px var(--f);cursor:pointer">保存</button>
+    </div>
+    <div id="mout" class="muted" style="margin-top:8px;font-size:12px">
+      ${mine ? `上次记录：${esc(mine.at)} · ${RESULT[mine.result] || mine.result}` : '还没记录过这个项目'}
+    </div>`;
+
+  $('msave').onclick = async () => {
+    const priceWan = Number($('mp').value);
+    const body = {
+      guid,
+      title,
+      myPrice: priceWan > 0 ? Math.round(priceWan * 1e4) : null,
+      result: $('mr').value,
+      note: $('mn').value,
+    };
+    const r = await (await fetch('/api/my-bids', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })).json();
+    $('mout').innerHTML = r.ok
+      ? `<span style="color:var(--ok)">已保存（共 ${r.count} 条记录）</span>`
+      : `<span style="color:var(--bad)">${esc(r.error)}</span>`;
   };
 }
 
