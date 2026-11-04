@@ -555,6 +555,80 @@ def digest_json(days: int) -> dict:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
+def price_ref(guid: str) -> dict:
+    """调 price-ref.ts 拿报价参考 —— 下浮率配对与分位计算都在 lib/price-stats.ts。"""
+    try:
+        r = subprocess.run(
+            ["node", "--no-warnings", "src/price-ref.ts", f"--g={guid}"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=PROJ, timeout=60,
+        )
+        if r.returncode != 0:
+            return {"ok": False, "error": (r.stderr or "报价参考生成失败")[-500:]}
+        return json.loads(r.stdout)
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+ZIP_LIMIT_MB = 500
+
+
+def zip_attachments(guid: str):
+    """把该公告的附件打成 zip，返回临时文件路径。
+
+    为什么写临时文件而不是内存 BytesIO：30 个附件合计 190 MB（有项目 30 个 PDF），
+    整包在内存里组装会瞬间吃掉 400 MB+。写盘 + 分块发送，内存占用恒定，
+    上限可以放到 500 MB。
+    """
+    if not guid or len(guid) < 8:
+        return None, "缺少 guid"
+    c = _ro()
+    rows = _rows(
+        c.cursor(),
+        "SELECT attach_guid, filename, local_path, size_bytes FROM attachment "
+        "WHERE announcement_guid = ? AND status = 'ok'",
+        (guid,),
+    )
+    c.close()
+    rows = [r for r in rows if r.get("local_path")]
+    if not rows:
+        return None, "本项目没有可下载的附件"
+
+    total = sum(r.get("size_bytes") or 0 for r in rows)
+    if total > ZIP_LIMIT_MB * 1024 * 1024:
+        return None, f"附件合计 {total / 1048576:.0f} MB，超过 {ZIP_LIMIT_MB} MB 上限，请逐个下载"
+
+    import zipfile
+
+    # 临时文件放在 data 目录下，保证在工作区内
+    tmpdir = os.path.join(PROJ, "data", "_tmp")
+    os.makedirs(tmpdir, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(suffix=".zip", dir=tmpdir)
+    os.close(fd)
+
+    added = 0
+    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
+        seen = set()
+        for r in rows:
+            fp = os.path.join(PROJ, "data", r["local_path"])
+            if not os.path.exists(fp):
+                continue
+            name = r.get("filename") or os.path.basename(fp)
+            base, ext = os.path.splitext(name)
+            i = 1
+            while name in seen:  # 同名附件加序号，否则 zip 里会互相覆盖
+                name = f"{base}_{i}{ext}"
+                i += 1
+            seen.add(name)
+            z.write(fp, name)
+            added += 1
+
+    if added == 0:
+        os.unlink(tmp)
+        return None, "附件文件在本地已丢失，请重新下载"
+    return tmp, None
+
+
 def get_check_text(fn: str) -> dict:
     """取出这次检查时的标书原文（按行），用于点证据行号定位。"""
     if not fn or "/" in fn or "\\" in fn or not fn.endswith(".json"):
@@ -640,6 +714,36 @@ class H(BaseHTTPRequestHandler):
                 return self._send(search_projects(one("q", ""), int(one("limit", "20"))))
             if p == "/api/digest":
                 return self._send(digest_json(int(one("days", "2"))))
+            if p == "/api/price-ref":
+                return self._send(price_ref(one("g", "")))
+            if p == "/api/attachments/zip":
+                g0 = one("g", "")
+                path, err = zip_attachments(g0)
+                if err:
+                    return self._send({"ok": False, "error": err}, 400)
+                try:
+                    size = os.path.getsize(path)
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/zip")
+                    self.send_header(
+                        "Content-Disposition",
+                        'attachment; filename="attachments-%s.zip"' % (g0[:8] if g0 else "x"),
+                    )
+                    self.send_header("Content-Length", str(size))
+                    self.end_headers()
+                    # 分块发送：大文件不整个读进内存
+                    with open(path, "rb") as f:
+                        while True:
+                            chunk = f.read(65536)
+                            if not chunk:
+                                break
+                            self.wfile.write(chunk)
+                finally:
+                    try:
+                        os.unlink(path)
+                    except OSError:
+                        pass
+                return
             if p == "/api/checks":
                 return self._send(list_checks())
             if p == "/api/checks/get":

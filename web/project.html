@@ -177,6 +177,8 @@ function render(d) {
   h += '<section><h2>附件<em>' + atts.length + ' 个</em></h2>';
   if (!atts.length) h += '<div class="body muted">本条公告没有下载到附件（站点可能只发正文，或详情页是跳转壳）</div>';
   else {
+    h += `<div class="body" style="padding-bottom:0"><a class="btn ghost" href="/api/attachments/zip?g=${encodeURIComponent(a.guid)}">打包下载</a>`
+      + '<span class="muted" style="margin-left:10px">单个 zip，上限 500 MB；超过请逐个点开下载</span></div>';
     h += '<table><thead><tr><th>文件名</th><th style="width:70px">类型</th><th style="width:80px">大小</th><th style="width:70px">状态</th></tr></thead><tbody>'
       + atts.map((x) => {
         const can = x.status === 'ok' && x.local_path;
@@ -205,6 +207,9 @@ function render(d) {
   }
   h += '</div></section>';
 
+  // 报价参考：异步加载（要跑下浮率配对，1 秒左右，不阻塞首屏）
+  h += '<section><h2>报价参考<em>同类项目下浮率</em></h2><div class="body" id="pref"><span class="muted">载入中…</span></div></section>';
+
   // 澄清
   h += `<section><h2>澄清问答<em>${clar.length} 条 · 涉评分 ${clar.filter((x) => (x.affects || '').includes('评分')).length} 条</em></h2>`;
   if (!clar.length) h += '<div class="body muted">本项目没有澄清答疑</div>';
@@ -223,7 +228,7 @@ function render(d) {
   if (res) {
     h += '<section><h2>中标结果</h2><div class="body"><dl>'
       + `<dt>中标人</dt><dd>${esc(res.winner || '—')}</dd>`
-      + `<dt>中标价</dt><dd>${res.winner_price ? res.winner_price.toLocaleString('zh-CN') + ' 元（' + wan(res.winner_price) + '）' : '—'}</dd>`
+      + `<dt>中标价</dt><dd>${res.winner_price ? res.winner_price.toLocaleString('zh-CN') + ' 元（' + wan(res.winner_price) + '）' + (price ? ` · 下浮 <b>${((1 - res.winner_price / price) * 100).toFixed(1)}%</b>` : '') : '—'}</dd>`
       + (res.price_min && res.price_max ? `<dt>报价区间</dt><dd>${wan(res.price_min)} ~ ${wan(res.price_max)}</dd>` : '')
       + (res.bidder_count ? `<dt>投标家数</dt><dd>${res.bidder_count}</dd>` : '')
       + '</dl></div></section>';
@@ -251,11 +256,80 @@ function render(d) {
 
   $('out').innerHTML = h;
 
+  loadPriceRef(a.guid, price);
+
   const ex = $('expand');
   if (ex) ex.onclick = async () => {
     // 正文可能超 3 万字被截断，这里只在已下发全量时展开
     if (a.body_full) { $('body').textContent = a.body_full; ex.style.display = 'none'; }
     else { ex.textContent = '正文过长（>3 万字），请用数据浏览器查看'; ex.style.cursor = 'default'; }
+  };
+}
+
+// ---------- 报价参考 ----------
+// 异步加载：要跑全库下浮率配对（约 1 秒），不阻塞首屏。
+// 分类口径与 CLI 一致（src/lib/price-stats.ts 的 typeOfTitle）。
+async function loadPriceRef(guid, limit) {
+  const el = $('pref');
+  if (!el) return;
+  let j;
+  try {
+    j = await (await fetch('/api/price-ref?g=' + encodeURIComponent(guid))).json();
+  } catch (e) {
+    el.innerHTML = `<span class="muted">${esc(e.message)}</span>`;
+    return;
+  }
+  if (!j.ok) { el.innerHTML = `<span class="muted">${esc(j.error)}</span>`; return; }
+
+  const d = j.data;
+  const pct = (x) => (x * 100).toFixed(1) + '%';
+  const money = (x) => (x == null ? '—' : (x / 1e4).toFixed(0) + ' 万');
+
+  if (!d.limit) {
+    el.innerHTML = '<span class="muted">本项目没有抽取到限价，无法给报价区间。'
+      + `全库下浮率中位 ${pct(d.all.p50)}（n=${d.all.n}）</span>`;
+    return;
+  }
+
+  let h = '<dl>'
+    + `<dt>本项目限价</dt><dd>${money(d.limit)}</dd>`
+    + `<dt>同类（${esc(d.type)}）</dt><dd>中位下浮 <b>${d.same ? pct(d.same.p50) : '—'}</b>`
+    + (d.same
+        ? `（P25 ${pct(d.same.p25)} ~ P75 ${pct(d.same.p75)}，n=${d.sameN}）`
+        : `（同类样本仅 ${d.sameN} 个，不足 5 个不出区间）`)
+    + '</dd>'
+    + `<dt>全库</dt><dd>中位下浮 ${pct(d.all.p50)}（n=${d.all.n}）</dd>`;
+  if (d.suggest) {
+    h += `<dt>建议报价</dt><dd><b>${money(d.suggest.low)} ~ ${money(d.suggest.high)}</b>　中位 ${money(d.suggest.mid)}</dd>`;
+  }
+  h += '</dl>';
+
+  h += `<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <span class="muted">我的报价（万）</span>
+    <input id="myprice" type="number" step="1" style="width:120px;padding:6px 9px;border:1px solid var(--line);font:13px var(--f)">
+    <button id="calc" style="padding:6px 14px;border:1px solid var(--accent);background:#fff;color:var(--accent);font:600 12.5px var(--f);cursor:pointer">算下浮</button>
+    <span id="calcout" class="muted"></span>
+  </div>`;
+
+  if (d.samples && d.samples.length) {
+    h += '<table style="margin-top:12px"><thead><tr><th>同类中标样本</th>'
+      + '<th style="width:76px">限价</th><th style="width:76px">中标价</th><th style="width:64px">下浮</th>'
+      + '</tr></thead><tbody>'
+      + d.samples.map((s) =>
+          `<tr><td>${esc(s.title.slice(0, 40))}</td><td class="k">${money(s.ctrl)}</td>`
+          + `<td class="k">${money(s.win)}</td><td class="k">${pct(s.rate)}</td></tr>`).join('')
+      + '</tbody></table>';
+  }
+  el.innerHTML = h;
+
+  const btn = $('calc');
+  if (btn) btn.onclick = () => {
+    const v = Number($('myprice').value) * 1e4;
+    const o = $('calcout');
+    if (!v || !d.limit) { o.textContent = '请输入报价'; return; }
+    const r = 1 - v / d.limit;
+    const vs = d.same ? (r > d.same.p50 ? '高于同类中位' : '低于同类中位') : '';
+    o.innerHTML = `下浮 <b>${pct(r)}</b>${vs ? '（' + vs + '）' : ''}`;
   };
 }
 

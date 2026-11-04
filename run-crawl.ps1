@@ -55,6 +55,12 @@ if ($sizeGB -lt $limitGB) {
         Out-File -Append -Encoding utf8 data\crawl.err
 }
 
+# 新下载的招标文件自动解析：评分表 / 评标办法 / 限价 / 工期
+# 只处理还没有 tender_doc 记录的（extract-docs 自己会跳过已解析的）。
+# --limit=20 控制单次耗时：每份约 10-30 秒，20 份约 5-10 分钟。
+node --no-warnings src\extract-docs.ts --limit=20 2>&1 |
+    Out-File -Append -Encoding utf8 data\crawl.log
+
 # 抓完立刻出日报并推送。
 # --days=2 而不是 1：跨天边界（凌晨跑时"昨天"的公告也要覆盖）。
 # 推送渠道读 data/notify.config.json，没配就只写 output/digest.md，不报错。
