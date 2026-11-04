@@ -61,6 +61,11 @@ if ($sizeGB -lt $limitGB) {
 node --no-warnings src\extract-docs.ts --limit=20 2>&1 |
     Out-File -Append -Encoding utf8 data\crawl.log
 
+# 投标截止时间抽取：日报的「3 天内截止」与紧急区全靠这一步。
+# 不 gate 退出码 —— 抽取失败不能连累后面的日报与推送。
+node --no-warnings src\extract-deadline.ts 2>&1 |
+    Out-File -Append -Encoding utf8 data\crawl.log
+
 # 抓完立刻出日报并推送。
 # --days=2 而不是 1：跨天边界（凌晨跑时"昨天"的公告也要覆盖）。
 # 推送渠道读 data/notify.config.json，没配就只写 output/digest.md，不报错。

@@ -26,8 +26,18 @@ const argOf = (k: string): string | undefined => {
 };
 const DAYS = Number(argOf('days') ?? 1);
 const SEND = process.argv.includes('--send');
+const AS_JSON = process.argv.includes('--json');
 const OUT = argOf('out') ?? 'output/digest.md';
 const CFG_PATH = argOf('config') ?? 'data/notify.config.json';
+
+/**
+ * 本地日期（Asia/Shanghai）。
+ *
+ * 为什么不用 toISOString()：它是 UTC。定时任务 06:00 跑时 UTC 还是前一天 22:00，
+ * 于是「近 2 天」实际变成 2.5 天、日报标题显示成昨天，剩余天数整体错一天。
+ */
+const todayOf = (ms = Date.now()): string =>
+  new Date(ms - new Date(ms).getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
 
 interface Item {
   guid: string;
@@ -49,7 +59,8 @@ const TAG_CN: Record<string, string> = {
 
 // ---------------- 取数 ----------------
 const db = new DatabaseSync(join('data', 'index.db'), { readOnly: true });
-const since = new Date(Date.now() - DAYS * 864e5).toISOString().slice(0, 10);
+const today = todayOf();
+const since = todayOf(Date.now() - DAYS * 864e5);
 
 // 限价与工期可能一对多（多标段），用子查询取最大值，避免 JOIN 放大行数
 const rows = db
@@ -63,10 +74,75 @@ const rows = db
      ORDER BY a.pub_date DESC, a.city`,
   )
   .all(since) as unknown as Item[];
+
+// --json 专用：截止时间 / 已下载附件 / 紧急区。
+// 只在 --json 时查，Markdown 与推送路径完全不碰这几张表 ——
+// text 是文件与推送共用的同一个变量，动主 SQL 就会动推送内容，那是另一份风险预算。
+const deadlineMap = new Map<
+  string,
+  { date: string | null; hhmm: string | null; source: string | null; confidence: string | null }
+>();
+const attachSet = new Set<string>();
+type UrgentRow = {
+  guid: string;
+  title: string;
+  city: string | null;
+  tag: string | null;
+  url: string | null;
+  pubDate: string;
+  date: string;
+  hhmm: string | null;
+  confidence: string;
+};
+let urgentRows: UrgentRow[] = [];
+
+if (AS_JSON) {
+  const ids = rows.map((r) => r.guid);
+  // SQLite 单条语句参数上限 999，按 500 分批
+  for (let i = 0; i < ids.length; i += 500) {
+    const part = ids.slice(i, i + 500);
+    const ph = part.map(() => '?').join(',');
+
+    const ds = db
+      .prepare(
+        `SELECT announcement_guid g, deadline_date date, hhmm, source, confidence
+         FROM announcement_deadline WHERE announcement_guid IN (${ph})`,
+      )
+      .all(...part) as unknown as Array<{
+      g: string;
+      date: string | null;
+      hhmm: string | null;
+      source: string | null;
+      confidence: string | null;
+    }>;
+    for (const d of ds) {
+      deadlineMap.set(d.g, { date: d.date, hhmm: d.hhmm, source: d.source, confidence: d.confidence });
+    }
+
+    // 附件真值在 announcement_attachment（attachment.announcement_guid 只记首次写入者）
+    const as = db
+      .prepare(`SELECT DISTINCT announcement_guid g FROM announcement_attachment WHERE announcement_guid IN (${ph})`)
+      .all(...part) as unknown as Array<{ g: string }>;
+    for (const a of as) attachSet.add(a.g);
+  }
+
+  // 紧急区必须独立查全库：40 天前发布、明天截止的标，在「近 2 天」窗口里根本不存在。
+  // 只取 confidence='high' —— 假警报比没警报更伤信任。
+  const hi = todayOf(Date.now() + 3 * 864e5);
+  urgentRows = db
+    .prepare(
+      `SELECT a.guid, a.title, a.city, a.primary_tag tag, a.origin_url url, a.pub_date pubDate,
+              d.deadline_date date, d.hhmm, d.confidence
+       FROM announcement a JOIN announcement_deadline d ON d.announcement_guid = a.guid
+       WHERE a.bulletin_nature = '1' AND d.confidence = 'high'
+         AND d.deadline_date BETWEEN ? AND ?
+       ORDER BY d.deadline_date ASC, d.hhmm ASC LIMIT 50`,
+    )
+    .all(today, hi) as unknown as UrgentRow[];
+}
 db.close();
 
 // ---------------- 组装 ----------------
-const today = new Date().toISOString().slice(0, 10);
 const byTag = new Map<string, Item[]>();
 for (const it of rows) {
   const k = TAG_CN[it.tag] ?? '其他';
@@ -116,14 +192,52 @@ if (rows.length) {
 
 const text = lines.join('\n');
 
-// --json：给面板用。前端不重算分组逻辑，避免和 Markdown 两套口径。
-if (process.argv.includes('--json')) {
+// --json：给面板用。Markdown 的 text 已经在上面组装完，这里只加字段、不改已有内容。
+if (AS_JSON) {
+  const daysLeftOf = (d: string | null): number | null => {
+    if (!d) return null;
+    return Math.round((Date.parse(`${d}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 864e5);
+  };
+
+  const items = rows.map((it) => {
+    const d = deadlineMap.get(it.guid);
+    return {
+      guid: it.guid,
+      title: it.title,
+      city: it.city,
+      pubDate: it.pubDate,
+      tag: it.tag,
+      amount: it.amount,
+      days: it.days,
+      url: it.url,
+      deadlineDate: d?.date ?? null,
+      hhmm: d?.hhmm ?? null,
+      dlSource: d?.source ?? null,
+      dlConf: d?.confidence ?? null,
+      daysLeft: daysLeftOf(d?.date ?? null),
+      hasAttach: attachSet.has(it.guid),
+    };
+  });
+
+  // 计数基于全量 items，不由前端算 —— 一旦将来截断，前端算出来的计数就是错的
+  const counts = {
+    due3: items.filter((x) => x.daysLeft !== null && x.daysLeft >= 0 && x.daysLeft <= 3).length,
+    due7: items.filter((x) => x.daysLeft !== null && x.daysLeft >= 0 && x.daysLeft <= 7).length,
+    noDeadline: items.filter((x) => x.deadlineDate === null).length,
+    withAttach: items.filter((x) => x.hasAttach).length,
+  };
+
+  // 90 天窗口约 2000 条 / 700KB，本地服务可接受；超过 3000 条才截断并显式标记
+  const MAX_ITEMS = 3000;
+  const truncated = items.length > MAX_ITEMS;
+
+  // groups 保留：批次 1 的前端切到 items 之前，老结构仍可用
   const groups = [...byTag.entries()]
     .sort((a, b) => b[1].length - a[1].length)
-    .map(([tag, items]) => ({
+    .map(([tag, arr]) => ({
       tag,
-      count: items.length,
-      items: items.slice(0, 30).map((it) => ({
+      count: arr.length,
+      items: arr.slice(0, 200).map((it) => ({
         guid: it.guid,
         title: it.title,
         city: it.city,
@@ -133,7 +247,23 @@ if (process.argv.includes('--json')) {
         url: it.url,
       })),
     }));
-  console.log(JSON.stringify({ date: today, days: DAYS, total: rows.length, groups }, null, 2));
+
+  console.log(
+    JSON.stringify(
+      {
+        date: today,
+        days: DAYS,
+        total: rows.length,
+        counts,
+        urgent: urgentRows,
+        items: truncated ? items.slice(0, MAX_ITEMS) : items,
+        truncated,
+        groups,
+      },
+      null,
+      2,
+    ),
+  );
   process.exit(0);
 }
 

@@ -6,7 +6,7 @@
 启动：python web/server.py [端口]
 访问：http://127.0.0.1:8420/
 """
-import sys, os, json, sqlite3, mimetypes, re, subprocess, tempfile
+import sys, os, json, sqlite3, mimetypes, re, subprocess, tempfile, threading, time
 from datetime import datetime
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, quote
@@ -538,21 +538,47 @@ def search_projects(q: str, limit: int = 20) -> dict:
     return {"ok": True, "items": items}
 
 
+_DIGEST_CACHE: dict = {}
+_DIGEST_LOCK = threading.Lock()
+DIGEST_TTL = 120
+DIGEST_MAX_DAYS = 90
+
+
 def digest_json(days: int) -> dict:
-    """调 daily-digest.ts 拿结构化日报 —— 不在这里重写 SQL，避免两套口径。"""
-    try:
-        r = subprocess.run(
-            ["node", "--no-warnings", "src/daily-digest.ts", f"--days={days}", "--json"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
-            cwd=PROJ, timeout=60,
-        )
-        if r.returncode != 0:
-            return {"ok": False, "error": (r.stderr or "日报生成失败")[-600:]}
-        return {"ok": True, "data": json.loads(r.stdout)}
-    except subprocess.TimeoutExpired:
-        return {"ok": False, "error": "日报生成超时"}
-    except Exception as e:
-        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+    """调 daily-digest.ts 拿结构化日报 —— 不在这里重写 SQL，避免两套口径。
+
+    三个保护：
+    - days 钳到 1..90：原来 `?days=99999` 会扫全库
+    - 120 秒缓存：一次请求 0.34s 里有 0.29s 是 node 冷启动，切 tab 就重付一次
+    - 单飞锁：10 个并发请求会起 10 个 node 进程（每个约 40MB）
+    """
+    days = max(1, min(DIGEST_MAX_DAYS, int(days or 2)))
+
+    hit = _DIGEST_CACHE.get(days)
+    if hit and time.time() - hit[0] < DIGEST_TTL:
+        return {**hit[1], "cached": True}
+
+    with _DIGEST_LOCK:
+        # 拿到锁后再看一次：等锁期间可能已被别人算好
+        hit = _DIGEST_CACHE.get(days)
+        if hit and time.time() - hit[0] < DIGEST_TTL:
+            return {**hit[1], "cached": True}
+
+        try:
+            r = subprocess.run(
+                ["node", "--no-warnings", "src/daily-digest.ts", f"--days={days}", "--json"],
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                cwd=PROJ, timeout=120,
+            )
+            if r.returncode != 0:
+                return {"ok": False, "error": (r.stderr or "日报生成失败")[-600:]}
+            res = {"ok": True, "data": json.loads(r.stdout)}
+            _DIGEST_CACHE[days] = (time.time(), res)
+            return {**res, "cached": False}
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "error": "日报生成超时"}
+        except Exception as e:
+            return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
 def price_ref(guid: str) -> dict:
