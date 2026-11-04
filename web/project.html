@@ -221,7 +221,7 @@ function render(d) {
     h += '<div class="body"><dl>'
       + `<dt>资质要求</dt><dd>${cl.qualification ? esc(cl.qualification) : '<span class="muted">未抽到</span>'}</dd>`
       + `<dt>项目负责人</dt><dd>${cl.builder ? esc(cl.builder) : '<span class="muted">未抽到</span>'}</dd>`
-      + `<dt>业绩门槛</dt><dd>${cl.performance ? esc(cl.performance) : '<span class="muted">未注明</span>'}</dd>`
+      + `<dt>业绩门槛</dt><dd>${renderPerf(d.perf)}</dd>`
       + `<dt>联合体</dt><dd>${jv}</dd>`
       + '</dl>';
     if (cl.qual_text) {
@@ -418,6 +418,33 @@ async function loadMine(guid, title) {
       ? `<span style="color:var(--ok)">已保存（共 ${r.count} 条记录）</span>`
       : `<span style="color:var(--bad)">${esc(r.error)}</span>`;
   };
+}
+
+// ---------- 业绩五要素 ----------
+// 三态：无门槛（4,342 条）/ 见招标文件（52 条）/ 有实质门槛（2,575 条）。
+// 「无门槛」是有效信息，不能显示成「未抽到」。
+function renderPerf(p) {
+  if (!p) return '<span class="muted">未抽到业绩要求</span>';
+  if (p.notice === '无门槛') return '<b style="color:var(--ok)">本项目不设业绩门槛</b>';
+  if (p.notice === '见招标文件') return '<span class="muted">详见招标文件（正文未写明）</span>';
+
+  const parts = [];
+  if (p.years) parts.push(`近 ${p.years} 年`);
+  if (p.from_date) parts.push(`自 ${esc(p.from_date)} 以来`);
+  if (p.cnt) parts.push(`≥${p.cnt} 个`);
+  if (p.min_amount) parts.push(`≥${(p.min_amount / 1e4).toFixed(0)} 万元`);
+  if (p.scope) parts.push(esc(p.scope));
+  if (p.kind) parts.push(`${esc(p.kind)}项目`);
+  if (p.scale) parts.push(esc(p.scale));
+  if (p.proof) parts.push(esc(p.proof));
+
+  if (!parts.length) {
+    return '<span class="muted">正文提到业绩但没抽出可用要素</span>';
+  }
+  const missing = (p.missing || []).length
+    ? `<span class="muted" style="font-size:11.5px">（${(p.missing || []).length} 个要素原文未写明）</span>`
+    : '';
+  return parts.join(' · ') + ' ' + missing;
 }
 
 // ---------- 启动 ----------

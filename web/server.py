@@ -479,6 +479,14 @@ def project_detail(guid: str) -> dict:
         (guid,),
     )
     clause = clauses[0] if clauses else None
+    # 业绩五要素（独立表：无门槛 / 见招标文件 / 有实质门槛 三态）
+    perfRows = _rows(
+        cur,
+        "SELECT years, from_date, cnt, min_amount, scope, kind, proof, scale, evidence, "
+        "notice, confidence, reason FROM announcement_perf WHERE announcement_guid = ? LIMIT 1",
+        (guid,),
+    )
+    perf = perfRows[0] if perfRows else None
     clar = _rows(
         cur,
         "SELECT seq, question, answer, affects FROM clarification_qa "
@@ -520,6 +528,7 @@ def project_detail(guid: str) -> dict:
             "attachments": atts,
             "doc": doc,
             "clause": clause,
+            "perf": perf,
             "clarifications": clar,
             "result": res[0] if res else None,
             "prices": prices,

@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 import { parseClauses } from './lib/clauses.ts';
+import { parsePerfReq } from './lib/perf-req.ts';
 
 const DRY = process.argv.includes('--dry');
 const FORCE = process.argv.includes('--force');
@@ -37,6 +38,26 @@ CREATE TABLE IF NOT EXISTS announcement_clause (
   extracted_at      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_clause_jv ON announcement_clause(joint_venture);
+
+-- 业绩五要素（独立表：单行 JSON 存不下并列条件，也无法按金额/年限索引）
+CREATE TABLE IF NOT EXISTS announcement_perf (
+  announcement_guid TEXT PRIMARY KEY,
+  years       INTEGER,
+  from_date   TEXT,
+  cnt         INTEGER,
+  min_amount  REAL,
+  scope       TEXT,
+  kind        TEXT,
+  proof       TEXT,
+  scale       TEXT,
+  evidence    TEXT,
+  notice      TEXT,      -- 无门槛 | 见招标文件 | NULL(有实质门槛 或 没找到业绩句)
+  confidence  TEXT,
+  reason      TEXT,
+  extracted_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_perf_amount ON announcement_perf(min_amount);
+CREATE INDEX IF NOT EXISTS idx_perf_notice ON announcement_perf(notice);
 `);
 
 const sql = `
@@ -92,6 +113,33 @@ if (DRY) {
     throw e;
   }
   console.log(`已写入 ${results.length} 行\n`);
+
+  // 业绩五要素：独立事务 —— 这一段失败不能回滚上面已写好的资质行
+  const insPerf = db.prepare(`
+    INSERT INTO announcement_perf
+      (announcement_guid, years, from_date, cnt, min_amount, scope, kind, proof, scale,
+       evidence, notice, confidence, reason, extracted_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(announcement_guid) DO UPDATE SET
+      years = excluded.years, from_date = excluded.from_date, cnt = excluded.cnt,
+      min_amount = excluded.min_amount, scope = excluded.scope, kind = excluded.kind,
+      proof = excluded.proof, scale = excluded.scale, evidence = excluded.evidence,
+      notice = excluded.notice, confidence = excluded.confidence, reason = excluded.reason,
+      extracted_at = excluded.extracted_at
+  `);
+  db.exec('BEGIN');
+  try {
+    for (const r of results) {
+      const p = parsePerfReq(r.body ?? '');
+      insPerf.run(r.guid, p.years, p.fromDate, p.cnt, p.minAmount, p.scope, p.kind,
+        p.proof, p.scale, p.evidence, p.notice, p.confidence, p.reason, now);
+    }
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  console.log(`业绩五要素已写入 ${results.length} 行\n`);
 }
 
 // ---------- 审计 ----------
@@ -135,10 +183,19 @@ function report(): void {
       `SELECT
         (SELECT COUNT(*) FROM announcement WHERE bulletin_nature='1') AS total,
         (SELECT COUNT(*) FROM announcement_clause) AS done,
-        (SELECT COUNT(*) FROM announcement_clause WHERE qualification IS NOT NULL) AS qual`,
+        (SELECT COUNT(*) FROM announcement_clause WHERE qualification IS NOT NULL) AS qual,
+        (SELECT COUNT(*) FROM announcement_perf) AS perf,
+        (SELECT COUNT(*) FROM announcement_perf WHERE notice='无门槛') AS noReq,
+        (SELECT COUNT(*) FROM announcement_perf WHERE notice='见招标文件') AS defer,
+        (SELECT COUNT(*) FROM announcement_perf WHERE notice IS NULL AND reason IS NULL) AS real,
+        (SELECT COUNT(*) FROM announcement_perf WHERE min_amount IS NOT NULL) AS amount`,
     )
-    .get() as { total: number; done: number; qual: number };
+    .get() as {
+    total: number; done: number; qual: number; perf: number;
+    noReq: number; defer: number; real: number; amount: number;
+  };
   const pct = (a: number, b: number): string => (b ? ((a / b) * 100).toFixed(1) : '0.0');
   console.log('\n=== 全库覆盖 ===');
   console.log(`  招标公告 ${r.total}，已扫 ${r.done}（${pct(r.done, r.total)}%），抽到资质 ${r.qual}（${pct(r.qual, r.total)}%）`);
+  console.log(`  业绩：已扫 ${r.perf} / 明确无门槛 ${r.noReq} / 见招标文件 ${r.defer} / 有实质门槛 ${r.real} / 有金额 ${r.amount}`);
 }
