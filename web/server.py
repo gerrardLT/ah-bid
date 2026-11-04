@@ -814,6 +814,87 @@ def my_bid_save(data: dict) -> dict:
         return {"ok": True, "item": rec, "count": len(items)}
 
 
+def market_grid(since: str = "", until: str = "", x: str = "type") -> dict:
+    """L1 矩阵：城市 × 行业 的格子。
+
+    为什么新开函数而不是给 market() 加 x=grid 分支：
+    data/_market_test.py 有 5 条断言打的都是 /api/market，顺手重构会静默改坏它。
+
+    x 参数决定用哪一列做"行业"：
+      type    = typeOfTitle 的 9 类（含 40% 的"其他"）
+      segment = 补词后的细分（其他降到 ~25%）
+
+    长尾城市（n<30）不折叠，但标 thin=True —— 合肥只有 10 条是**采集缺口**
+    （405 条中标公告的正文实际是招标公告内容），折叠起来会掩盖问题。
+    """
+    d = load_facts()
+    if not d:
+        return {"ok": False, "error": "事实表不存在，请先跑 node --no-warnings src/agg-build.ts"}
+    facts = d["facts"]
+    if since:
+        facts = [f for f in facts if (f.get("pubDate") or "") >= since]
+    if until:
+        facts = [f for f in facts if (f.get("pubDate") or "") <= until]
+
+    import statistics
+
+    key2 = "type" if x == "type" else "segment"
+    agg: dict = {}       # (city, ty) -> {n, rates}
+    cityTotal: dict = {}
+    typeTotal: dict = {}
+    for f in facts:
+        city = f.get("city") or "其他"
+        ty = f.get(key2) or f.get("type") or "其他"
+        a = agg.get((city, ty))
+        if a is None:
+            a = {"n": 0, "rates": []}
+            agg[(city, ty)] = a
+        a["n"] += 1
+        if f.get("rate") is not None:
+            a["rates"].append(f["rate"])
+        cityTotal[city] = cityTotal.get(city, 0) + 1
+        typeTotal[ty] = typeTotal.get(ty, 0) + 1
+
+    # 列：按总量降序，把"其他/未分类"永远放最后（它是兜底，不是一类业务）
+    cols = sorted(typeTotal, key=lambda t: (t in ("其他", "未分类"), -typeTotal[t]))
+
+    rows = []
+    for city in sorted(cityTotal, key=lambda c: -cityTotal[c]):
+        cells = []
+        for ty in cols:
+            a = agg.get((city, ty))
+            if not a:
+                cells.append({"t": ty, "n": 0, "rn": 0, "med": None})
+                continue
+            cells.append({
+                "t": ty,
+                "n": a["n"],
+                "rn": len(a["rates"]),
+                "med": round(statistics.median(a["rates"]), 4) if a["rates"] else None,
+            })
+        rows.append({
+            "city": city,
+            "total": cityTotal[city],
+            "thin": cityTotal[city] < 30,
+            "cells": cells,
+        })
+
+    filled = sum(1 for v in agg.values() if v["n"] > 0)
+    rateCells = sum(1 for v in agg.values() if len(v["rates"]) >= 5)
+    return {
+        "ok": True,
+        "meta": {
+            "generatedAt": d.get("generatedAt"),
+            "total": len(facts),
+            "cells": len(agg),
+            "rateCells": rateCells,
+            "x": x,
+        },
+        "cols": cols,
+        "rows": rows,
+    }
+
+
 def get_check_text(fn: str) -> dict:
     """取出这次检查时的标书原文（按行），用于点证据行号定位。"""
     if not fn or "/" in fn or "\\" in fn or not fn.endswith(".json"):
@@ -913,6 +994,12 @@ class H(BaseHTTPRequestHandler):
                 ))
             if p == "/api/my-bids":
                 return self._send(my_bids_list())
+            if p == "/api/market-grid":
+                return self._send(market_grid(
+                    since=one("since", ""),
+                    until=one("until", ""),
+                    x=one("x", "type"),
+                ))
             if p == "/api/attachments/zip":
                 g0 = one("g", "")
                 path, err = zip_attachments(g0)

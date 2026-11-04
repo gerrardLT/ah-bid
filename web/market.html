@@ -68,7 +68,8 @@ tr.thin:hover{background:transparent}
 
 <main>
   <div class="tabs">
-    <button data-x="winner" class="on">中标单位</button>
+    <button data-x="grid" class="on">矩阵</button>
+    <button data-x="winner">中标单位</button>
     <button data-x="city">城市</button>
     <button data-x="type">行业</button>
     <button data-x="buyer">招标人</button>
@@ -100,9 +101,98 @@ const pct = (x) => (x == null ? '—' : (x * 100).toFixed(1) + '%');
 const money = (x) => (x == null ? '—' : x >= 1e8 ? (x / 1e8).toFixed(2) + ' 亿' : (x / 1e4).toFixed(0) + ' 万');
 const wan = (x) => (x == null ? '—' : (x / 1e4).toFixed(0) + ' 万');
 
-const S = { x: 'winner', city: '', type: '', since: '', until: '', minN: 5 };
+const S = { x: 'grid', city: '', type: '', since: '', until: '', minN: 5 };
+
+// ---------- L1 矩阵 ----------
+// 底色编码「样本量」而不是下浮率：实测 106 格里 71 格没有下浮率，
+// 按 rate 着色会让 2/3 的格子同色，矩阵就失去意义。
+async function loadGrid() {
+  // 矩阵视图下城市/行业下拉是冗余的（它们在矩阵里是「维度」不是「筛选」），
+  // 留着会让人以为能在矩阵上再加筛选。时间窗保留，minN 对矩阵无意义也隐藏。
+  $('fCity').style.display = 'none';
+  $('fType').style.display = 'none';
+  $('fN').style.display = 'none';
+  $('out').innerHTML = '<div class="empty">载入中…</div>';
+  let j;
+  try {
+    const q = new URLSearchParams();
+    if (S.since) q.set('since', S.since);
+    if (S.until) q.set('until', S.until);
+    j = await (await fetch('/api/market-grid?' + q)).json();
+  } catch (e) {
+    $('out').innerHTML = `<div class="err">${esc(e.message)}</div>`;
+    return;
+  }
+  if (!j.ok) { $('out').innerHTML = `<div class="err">${esc(j.error)}</div>`; return; }
+  renderMatrix(j);
+}
+
+function renderMatrix(j) {
+  const maxN = Math.max(1, ...j.rows.flatMap((r) => r.cells.map((c) => c.n || 0)));
+  // 底色四档：<5 不填、5-20 浅、20-80 中、>80 深
+  const bg = (n) => {
+    if (!n) return 'transparent';
+    if (n < 5) return 'rgba(200,55,26,0.05)';
+    if (n < 20) return 'rgba(200,55,26,0.12)';
+    if (n < 80) return 'rgba(200,55,26,0.24)';
+    return 'rgba(200,55,26,0.38)';
+  };
+
+  $('meta').textContent = `事实表 ${j.meta.generatedAt.slice(0, 16).replace('T', ' ')} · ${j.meta.total} 条`;
+  $('kpi').innerHTML = `
+    <div><b>${j.meta.total}</b><span>中标记录</span></div>
+    <div><b>${j.rows.length}</b><span>城市</span></div>
+    <div><b>${j.meta.cells}</b><span>非空格子</span></div>
+    <div><b>${j.meta.rateCells}</b><span>下浮率样本≥5 的格</span></div>`;
+
+  let h = `<section><h2>城市 × 行业<em>点格子看该组合的中标单位</em></h2>
+    <div style="overflow-x:auto"><table style="min-width:820px"><thead><tr>
+      <th style="width:88px">城市</th>
+      ${j.cols.map((c) => `<th class="r" style="width:72px">${esc(c)}</th>`).join('')}
+      <th class="r" style="width:64px;border-left:1px solid var(--line)">合计</th>
+    </tr></thead><tbody>`;
+
+  for (const r of j.rows) {
+    h += `<tr${r.thin ? ' class="thin"' : ''}>
+      <td>${esc(r.city)}${r.thin ? ' <span class="warn" style="font-size:11px" title="样本不足 30 条，可能是采集缺口">⚠</span>' : ''}</td>`;
+    for (const c of r.cells) {
+      if (!c.n) { h += '<td class="r muted">·</td>'; continue; }
+      const rateTxt = c.rn >= 5 && c.med != null
+        ? `<div style="font:10.5px var(--m);color:var(--ink-3)">${(c.med * 100).toFixed(1)}%</div>`
+        : '';
+      const clickable = c.n >= 5;
+      h += `<td class="r k" style="background:${bg(c.n)};${clickable ? 'cursor:pointer' : 'opacity:.55'}"
+        ${clickable ? `onclick="pickCell('${esc(r.city)}','${esc(c.t)}')"` : 'title="样本不足 5 条，不下结论"'}>
+        ${c.n}${rateTxt}</td>`;
+    }
+    h += `<td class="r k" style="border-left:1px solid var(--line);font-weight:600">${r.total}</td></tr>`;
+  }
+  h += `</tbody></table></div>
+    <div style="padding:9px 14px;font-size:11.5px;color:var(--ink-3);border-top:1px solid var(--line-2)">
+      底色深浅 = 样本量；格内小字 = 下浮率中位（仅 ≥5 个样本时显示）；
+      灰字 = 样本不足 5 条；⚠ = 该城市不足 30 条，多半是采集缺口而不是没项目
+    </div></section>`;
+  $('out').innerHTML = h;
+}
+
+// 点格子 → 切到「中标单位」tab 并带上筛选（L2 的降级形态，先让它立刻可用）
+function pickCell(city, type) {
+  S.city = city === '其他' ? '' : city;
+  S.type = type;
+  $('fCity').innerHTML = `<option value="">全部城市</option><option value="${esc(S.city)}">${esc(S.city)}</option>`;
+  $('fCity').value = S.city;
+  $('fType').innerHTML = `<option value="">全部行业</option><option value="${esc(type)}">${esc(type)}</option>`;
+  $('fType').value = type;
+  document.querySelectorAll('.tabs button').forEach((x) => x.classList.remove('on'));
+  document.querySelector('.tabs button[data-x="winner"]').classList.add('on');
+  S.x = 'winner';
+  load();
+}
 
 async function load() {
+  $('fCity').style.display = '';
+  $('fType').style.display = '';
+  $('fN').style.display = '';
   $('out').innerHTML = '<div class="empty">载入中…</div>';
   const q = new URLSearchParams({ x: S.x, limit: '2000' });
   if (S.city) q.set('city', S.city);
@@ -204,7 +294,9 @@ document.querySelectorAll('.tabs button').forEach((b) => {
     document.querySelectorAll('.tabs button').forEach((x) => x.classList.remove('on'));
     b.classList.add('on');
     S.x = b.dataset.x;
-    load();
+    // 矩阵走独立接口；其他 4 个 tab 仍走原来的 /api/market（那一套有 5 条回归断言）
+    if (S.x === 'grid') loadGrid();
+    else load();
   };
 });
 $('fCity').onchange = () => { S.city = $('fCity').value; load(); };
@@ -218,7 +310,8 @@ $('fReset').onclick = () => {
   load();
 };
 
-load();
+// 默认进矩阵（tabs 里 grid 是第一个且带 on）
+loadGrid();
 </script>
 </body>
 </html>
