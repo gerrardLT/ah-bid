@@ -28,6 +28,30 @@ node --no-warnings src\crawl.ts --natures=1,2,3 --since=$since --reset=all `
 
 $code = $LASTEXITCODE
 
+# ---- 附件下载（受磁盘上限保护）----
+# 为什么放在这里：原来附件要手动按市跑 attach.ts，新公告的标书永远不会自动下来。
+# 现在一次跑完全部城市，只处理最近 2 天、且还没有任何附件记录的公告。
+# 限定 attach.ts 默认的四类业务 tag（power/building/pv/storage），不抓全站。
+$limitGB = 40
+$attachDir = 'data\attachments'
+$sizeGB = 0
+if (Test-Path $attachDir) {
+    $sum = (Get-ChildItem $attachDir -Recurse -File -ErrorAction SilentlyContinue |
+            Measure-Object -Property Length -Sum).Sum
+    if ($sum) { $sizeGB = [math]::Round($sum / 1GB, 1) }
+}
+
+if ($sizeGB -lt $limitGB) {
+    "--- 附件阶段开始（当前 ${sizeGB} GB / 上限 ${limitGB} GB）---" |
+        Out-File -Append -Encoding utf8 data\crawl.log
+    node --no-warnings src\attach.ts --nature=1 --recent-days=2 --only-missing --limit=200 `
+        >> data\crawl.log 2>> data\crawl.err
+    "--- 附件阶段结束 exit=$LASTEXITCODE ---" | Out-File -Append -Encoding utf8 data\crawl.log
+} else {
+    "!!! 附件目录已达 ${sizeGB} GB，超过上限 ${limitGB} GB，本次跳过下载 !!!" |
+        Out-File -Append -Encoding utf8 data\crawl.err
+}
+
 # 抓完立刻出日报并推送。
 # --days=2 而不是 1：跨天边界（凌晨跑时"昨天"的公告也要覆盖）。
 # 推送渠道读 data/notify.config.json，没配就只写 output/digest.md，不报错。

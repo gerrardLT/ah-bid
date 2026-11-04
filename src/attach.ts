@@ -51,6 +51,12 @@ interface Args {
    * 用于定向抓取：中标公告里 80% 的附件是公告正文的签章版，内容已在 body_text 里，
    * 真正带新信息的是交易见证书、评标情况表、合同这类少数文件。
    */
+  /**
+   * 只处理最近 N 天发布的公告（--recent-days）。
+   * 定时任务用：不传 --city 时一次跑完全部城市的新增公告，
+   * 比在 PowerShell 里按城市循环调 16 次简单，也不会漏掉新出现的城市。
+   */
+  recentDays: number;
   nameMatch: string;
 }
 
@@ -84,6 +90,7 @@ function parseArgs(argv: string[]): Args {
     retryFailed: argv.includes('--retry-failed'),
     hasCity: argv.some((a) => a.startsWith('--city=')),
     onlyMissing: argv.includes('--only-missing'),
+    recentDays: Number(get('recent-days', '0')),
     nameMatch,
     before,
   };
@@ -513,6 +520,10 @@ const rows = args.retryFailed
   : (() => {
       // pub_date 是 'YYYY-MM-DD' 文本，字典序即时间序，可以直接用 <= 截断。
       const bound = args.before ? 'AND pub_date <= ?' : '';
+      // 定时任务用：只抓最近 N 天发布的，避免每次把全库重扫一遍。
+      const recent = args.recentDays > 0 ? "AND pub_date >= date('now', ?)" : '';
+      // 不传 --city 就是全部城市。定时任务需要这个（一次跑完，不用按市循环 16 次）。
+      const cityCond = args.hasCity ? 'AND city = ?' : '';
       // 补洞模式：还没记录过任何附件关联的公告。用关联表而不是 attachment.announcement_guid，
       // 因为后者只记首个写入者，兄弟公告会永远显得“零附件”而实际文件已在本地。
       const missing = args.onlyMissing
@@ -520,18 +531,21 @@ const rows = args.retryFailed
         : '';
       const sql = `SELECT guid, city, pub_date AS pubDate, title, primary_tag AS tag, origin_url AS originUrl
          FROM announcement
-         WHERE city = ? AND bulletin_nature = ? AND origin_url IS NOT NULL
+         WHERE bulletin_nature = ? AND origin_url IS NOT NULL
+           ${cityCond}
            AND primary_tag IN (${args.tagFilter.map(() => '?').join(',')})
            ${bound}
+           ${recent}
            ${missing}
          ORDER BY pub_date DESC LIMIT ?`;
       return raw
         .prepare(sql)
         .all(
-          args.city,
           args.nature,
+          ...(args.hasCity ? [args.city] : []),
           ...args.tagFilter,
           ...(args.before ? [args.before] : []),
+          ...(args.recentDays > 0 ? [`-${args.recentDays} day`] : []),
           args.limit,
         ) as unknown as Array<{
         guid: string;
@@ -544,7 +558,7 @@ const rows = args.retryFailed
     })();
 
 console.log(
-  `待处理公告 ${rows.length} 条（${args.city} / nature=${args.nature}${args.before ? ` / ≤${args.before}` : ''}${args.onlyMissing ? ' / 仅零附件' : ''}）\n`,
+  `待处理公告 ${rows.length} 条（${args.hasCity ? args.city : '全部城市'} / nature=${args.nature}${args.before ? ` / ≤${args.before}` : ''}${args.onlyMissing ? ' / 仅零附件' : ''}）\n`,
 );
 
 let okCount = 0;
