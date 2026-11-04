@@ -217,16 +217,15 @@ async function load() {
 
 function fillFacets(f) {
   if (!f) return;
-  if ($('fCity').options.length <= 1) {
-    $('fCity').innerHTML = '<option value="">全部城市</option>' +
-      f.cities.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
-    $('fCity').value = S.city;
-  }
-  if ($('fType').options.length <= 1) {
-    $('fType').innerHTML = '<option value="">全部行业</option>' +
-      f.types.map((t) => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
-    $('fType').value = S.type;
-  }
+  // 无条件重建：原来用 options.length <= 1 做守卫，但 pickCell() 会把下拉重建成
+  // 「全部 + 选中项」两项，此后守卫永远为假 → 用户再也换不了城市/行业，重置也救不回。
+  const build = (cur, list, all) => {
+    const vals = [...new Set([...(cur ? [cur] : []), ...list])];
+    return `<option value="">${all}</option>` +
+      vals.map((v) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(v)}</option>`).join('');
+  };
+  $('fCity').innerHTML = build(S.city, f.cities || [], '全部城市');
+  $('fType').innerHTML = build(S.type, f.types || [], '全部行业');
 }
 
 function render(j) {
@@ -299,15 +298,17 @@ document.querySelectorAll('.tabs button').forEach((b) => {
     else load();
   };
 });
-$('fCity').onchange = () => { S.city = $('fCity').value; load(); };
-$('fType').onchange = () => { S.type = $('fType').value; load(); };
-$('fSince').onchange = () => { S.since = $('fSince').value; load(); };
-$('fUntil').onchange = () => { S.until = $('fUntil').value; load(); };
-$('fN').onchange = () => { S.minN = Number($('fN').value); load(); };
+// 矩阵 tab 下改日期/重置必须走 loadGrid，否则会请求 /api/market?x=grid 直接报错
+const refresh = () => (S.x === 'grid' ? loadGrid() : load());
+$('fCity').onchange = () => { S.city = $('fCity').value; refresh(); };
+$('fType').onchange = () => { S.type = $('fType').value; refresh(); };
+$('fSince').onchange = () => { S.since = $('fSince').value; refresh(); };
+$('fUntil').onchange = () => { S.until = $('fUntil').value; refresh(); };
+$('fN').onchange = () => { S.minN = Number($('fN').value); refresh(); };
 $('fReset').onclick = () => {
   S.city = ''; S.type = ''; S.since = ''; S.until = ''; S.minN = 5;
   $('fCity').value = ''; $('fType').value = ''; $('fSince').value = ''; $('fUntil').value = ''; $('fN').value = '5';
-  load();
+  refresh();
 };
 
 // 默认进矩阵（tabs 里 grid 是第一个且带 on）

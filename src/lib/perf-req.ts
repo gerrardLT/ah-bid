@@ -87,6 +87,13 @@ const RE_NO_REQ =
 /** 「详见招标文件第二章」「见前附表」 */
 const RE_DEFER = /详见\s*(?:招标文件|投标人须知|前附表|第二章|第三章)|见\s*(?:招标文件|投标人须知前附表)/;
 
+/**
+ * 人员业绩：项目经理 / 总监 / 建造师的业绩要求。
+ * 实测 1,106 条「无门槛」的「无/不要求」来自这些子句，而投标人业绩本身是有门槛的 ——
+ * 这是**判反**（比抽不到更危险，页面会显示成确定的"本项目不设业绩门槛"）。
+ */
+const RE_PERSON_PERF = /(项目经理|项目负责人|总监理工程师|技术负责人|建造师|总监)[^。；]{0,6}业绩/;
+
 export function parsePerfReq(fullText: string): PerfReq {
   const text = normalize(fullText || '');
   const base: PerfReq = {
@@ -107,15 +114,20 @@ export function parsePerfReq(fullText: string): PerfReq {
     return { ...base, reason: 'no_perf_sentence' };
   }
   const seg = `${sentences[idx]}。${sentences[idx + 1] ?? ''}`.trim();
+  const hitSentence = sentences[idx];
   base.evidence = seg.slice(0, 200);
 
-  // 2) 先判三态：无门槛 / 见招标文件 / 有实质门槛
-  if (RE_NO_REQ.test(seg)) {
-    return { ...base, notice: '无门槛', confidence: 'high', missing: [], reason: null };
-  }
-  if (RE_DEFER.test(seg) && !/\d+\s*(?:个|项|宗)|不低于|及以上/.test(seg)) {
+  // 2) 先判「见招标文件」—— 守卫只测**命中句**，不能被下一句的「共 3 个标段」关掉
+  if (RE_DEFER.test(seg) && !/\d+\s*(?:个|项|宗)|不低于|及以上/.test(hitSentence)) {
     return { ...base, notice: '见招标文件', confidence: 'medium', missing: [], reason: null };
   }
+
+  // 3) 「无门槛」的候选：只在命中句上判，且排除人员业绩子句。
+  //    但**不能立刻返回** —— 同一句里可能写「业绩数量无要求，但单项合同金额须达到 1000 万」。
+  const noReqM = RE_NO_REQ.exec(hitSentence);
+  const usNoReq =
+    noReqM != null &&
+    !RE_PERSON_PERF.test(hitSentence.slice(Math.max(0, noReqM.index - 20), noReqM.index));
 
   // 3) 五要素各自抽（互不影响）
   const out: PerfReq = { ...base, notice: null };
@@ -133,13 +145,18 @@ export function parsePerfReq(fullText: string): PerfReq {
   }
   if (!out.fromDate) missing.push('fromDate');
 
-  // cnt
-  const mc = /(\d{1,3}|[一二三四五六七八九十]{1,3})\s*(?:个|项|宗)/.exec(seg);
-  if (mc) {
-    const n = toNum(mc[1]);
-    // 1~20 才合理；"1个标段" 这类会被上式抓到，但标段数不是业绩数
-    if (n != null && n >= 1 && n <= 20 && !/标段/.test(seg.slice(Math.max(0, mc.index - 4), mc.index + 8))) {
+  // cnt —— 三个坑都要躲：
+  //   「6 个月内」（信誉条款样板句）→ (?!月)
+  //   「2.10 项目类别」缝成 2.10项目 → (?<![.\d]) 让 10 无法单独匹配
+  //   「共 3 个标段」→ (?!标段)，且要遍历找离「业绩/类似」最近的那个（不能只取首个）
+  const RE_CNT = /(?<![.\d])(\d{1,3}|[一二三四五六七八九十]{1,3})\s*(?:个|项|宗)(?!月|标段)/g;
+  for (const m of seg.matchAll(RE_CNT)) {
+    const n = toNum(m[1]);
+    if (n == null || n < 1 || n > 20) continue;
+    const around = seg.slice(Math.max(0, (m.index ?? 0) - 24), (m.index ?? 0) + 24);
+    if (/业绩|类似|同类/.test(around)) {
       out.cnt = n;
+      break;
     }
   }
   if (out.cnt == null) missing.push('cnt');
@@ -179,6 +196,13 @@ export function parsePerfReq(fullText: string): PerfReq {
 
   out.missing = missing;
   const got = 8 - missing.length;
+
+  // 4) 「无门槛」的最终判定：只有命中句写了无/不要求，**且**一个实质要素都没抽到，才算无门槛。
+  //    这样「业绩数量无要求，但合同金额须达到 1000 万」会保留实质门槛。
+  if (usNoReq && out.cnt == null && out.minAmount == null && out.years == null) {
+    return { ...out, notice: '无门槛', confidence: 'high', missing: [], reason: null };
+  }
+
   out.confidence = got >= 3 ? 'high' : got >= 1 ? 'medium' : 'low';
   out.reason = got === 0 ? 'no_field_matched' : null;
   return out;

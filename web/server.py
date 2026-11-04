@@ -480,12 +480,17 @@ def project_detail(guid: str) -> dict:
     )
     clause = clauses[0] if clauses else None
     # 业绩五要素（独立表：无门槛 / 见招标文件 / 有实质门槛 三态）
-    perfRows = _rows(
-        cur,
-        "SELECT years, from_date, cnt, min_amount, scope, kind, proof, scale, evidence, "
-        "notice, confidence, reason FROM announcement_perf WHERE announcement_guid = ? LIMIT 1",
-        (guid,),
-    )
+    # 用 try 保护：index.db 被 .gitignore 排除，announcement_perf 只由 extract-clauses 创建。
+    # 别人拉下代码直接用现有库起服务时，缺表不该让整个项目页 500。
+    try:
+        perfRows = _rows(
+            cur,
+            "SELECT years, from_date, cnt, min_amount, scope, kind, proof, scale, evidence, "
+            "notice, confidence, reason FROM announcement_perf WHERE announcement_guid = ? LIMIT 1",
+            (guid,),
+        )
+    except sqlite3.Error:
+        perfRows = []
     perf = perfRows[0] if perfRows else None
     clar = _rows(
         cur,
