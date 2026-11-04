@@ -323,7 +323,7 @@ CHECKS_DIR = os.path.join(PROJ, "output", "checks")
 ALLOWED_EXT = {".docx", ".doc", ".md", ".txt"}
 
 
-def run_check(data: bytes, name: str, guid: str, ptype: str) -> dict:
+def run_check(data: bytes, name: str, guid: str, ptype: str, title: str = "") -> dict:
     ext = os.path.splitext(name)[1].lower() or ".docx"
     if ext not in ALLOWED_EXT:
         return {"ok": False, "error": f"不支持的文件类型 {ext}（只收 docx / doc / md / txt）"}
@@ -334,6 +334,9 @@ def run_check(data: bytes, name: str, guid: str, ptype: str) -> dict:
         cmd = ["node", "--no-warnings", "src/tech-bid-check.ts", f"--bid={tmp}", "--json"]
         if guid:
             cmd.append(f"--guid={guid}")
+        elif title:
+            # 用户没选具体项目、只输了关键词时走标题匹配
+            cmd.append(f"--title={title}")
         if ptype:
             cmd.append(f"--project-type={ptype}")
         r = subprocess.run(
@@ -429,6 +432,129 @@ def get_check(fn: str) -> dict:
         return {"ok": True, "data": json.load(f)}
 
 
+def _ro():
+    return sqlite3.connect("file:" + DB + "?mode=ro", uri=True)
+
+
+def _rows(cur, sql, args=()):
+    cur.execute(sql, args)
+    cols = [d[0] for d in cur.description]
+    return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+
+def project_detail(guid: str) -> dict:
+    """项目全景：一次把 7 张表聚合到一个响应里。
+
+    为什么需要：原来要看一个项目，得在数据浏览器里分别翻 announcement / attachment /
+    tender_doc / scoring_item / clarification_qa / bid_result / tender_control_price，
+    靠 guid 手动对照。这个接口把它们拼在一起。
+    """
+    if not guid or len(guid) < 8:
+        return {"ok": False, "error": "缺少 guid"}
+    c = _ro()
+    cur = c.cursor()
+    hit = _rows(cur, "SELECT * FROM announcement WHERE guid = ?", (guid,))
+    if not hit:
+        c.close()
+        return {"ok": False, "error": "项目不存在"}
+    a = hit[0]
+    body = a.pop("body_text", "") or ""
+    a["body_chars"] = len(body)
+    a["body_head"] = body[:800]
+    a["body_full"] = body if len(body) <= 30000 else None
+
+    atts = _rows(
+        cur,
+        "SELECT attach_guid, filename, ext, size_bytes, status, local_path FROM attachment "
+        "WHERE announcement_guid = ? ORDER BY size_bytes DESC",
+        (guid,),
+    )
+    docs = _rows(cur, "SELECT * FROM tender_doc WHERE announcement_guid = ? LIMIT 1", (guid,))
+    doc = docs[0] if docs else None
+    clar = _rows(
+        cur,
+        "SELECT seq, question, answer, affects FROM clarification_qa "
+        "WHERE announcement_guid = ? ORDER BY seq",
+        (guid,),
+    )
+    res = _rows(cur, "SELECT * FROM bid_result WHERE announcement_guid = ? LIMIT 1", (guid,))
+    prices = _rows(
+        cur,
+        "SELECT amount, price_kind FROM tender_control_price WHERE announcement_guid = ?",
+        (guid,),
+    )
+    durs = _rows(cur, "SELECT days FROM tender_duration WHERE announcement_guid = ?", (guid,))
+
+    scoring_rows = 0
+    if doc:
+        cur.execute("SELECT COUNT(*) FROM scoring_item_full WHERE attach_guid = ?", (doc["attach_guid"],))
+        scoring_rows = cur.fetchone()[0]
+
+    # 私有清单没有 announcement_guid，只能按项目名匹配（与 boq-signal.ts 同口径：取最长命中）
+    boq = None
+    projs = [r["project"] for r in _rows(cur, "SELECT DISTINCT project FROM bid_boq_item")]
+    norm = lambda s: "".join((s or "").split())
+    t = norm(a.get("title", ""))
+    best, best_len = None, 0
+    for p in projs:
+        q = norm(p)
+        if len(q) >= 6 and (t.find(q) >= 0 or (q.find(t) >= 0 and len(t) >= 10)) and len(q) > best_len:
+            best, best_len = p, len(q)
+    if best:
+        cur.execute("SELECT COUNT(*) FROM bid_boq_item WHERE project = ?", (best,))
+        boq = {"project": best, "rows": cur.fetchone()[0]}
+
+    c.close()
+    return {
+        "ok": True,
+        "data": {
+            "announcement": a,
+            "attachments": atts,
+            "doc": doc,
+            "clarifications": clar,
+            "result": res[0] if res else None,
+            "prices": prices,
+            "durations": durs,
+            "scoring_rows": scoring_rows,
+            "boq": boq,
+        },
+    }
+
+
+def search_projects(q: str, limit: int = 20) -> dict:
+    """按标题或 guid 搜项目。给自检面板的下拉用。"""
+    q = (q or "").strip()
+    if not q:
+        return {"ok": True, "items": []}
+    c = _ro()
+    cur = c.cursor()
+    items = _rows(
+        cur,
+        "SELECT guid, title, city, pub_date, primary_tag, bulletin_nature FROM announcement "
+        "WHERE title LIKE ? OR guid = ? ORDER BY pub_date DESC LIMIT ?",
+        (f"%{q}%", q, min(50, max(1, limit))),
+    )
+    c.close()
+    return {"ok": True, "items": items}
+
+
+def digest_json(days: int) -> dict:
+    """调 daily-digest.ts 拿结构化日报 —— 不在这里重写 SQL，避免两套口径。"""
+    try:
+        r = subprocess.run(
+            ["node", "--no-warnings", "src/daily-digest.ts", f"--days={days}", "--json"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=PROJ, timeout=60,
+        )
+        if r.returncode != 0:
+            return {"ok": False, "error": (r.stderr or "日报生成失败")[-600:]}
+        return {"ok": True, "data": json.loads(r.stdout)}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "日报生成超时"}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
 def get_check_text(fn: str) -> dict:
     """取出这次检查时的标书原文（按行），用于点证据行号定位。"""
     if not fn or "/" in fn or "\\" in fn or not fn.endswith(".json"):
@@ -504,6 +630,16 @@ class H(BaseHTTPRequestHandler):
         try:
             if p in ("/check", "/check.html"):
                 return self._file(os.path.join(ROOT, "check.html"), "text/html; charset=utf-8")
+            if p in ("/project", "/project.html"):
+                return self._file(os.path.join(ROOT, "project.html"), "text/html; charset=utf-8")
+            if p in ("/digest", "/digest.html"):
+                return self._file(os.path.join(ROOT, "digest.html"), "text/html; charset=utf-8")
+            if p == "/api/project":
+                return self._send(project_detail(one("g", "")))
+            if p == "/api/search":
+                return self._send(search_projects(one("q", ""), int(one("limit", "20"))))
+            if p == "/api/digest":
+                return self._send(digest_json(int(one("days", "2"))))
             if p == "/api/checks":
                 return self._send(list_checks())
             if p == "/api/checks/get":
@@ -618,8 +754,9 @@ class H(BaseHTTPRequestHandler):
         name = one("name", "upload.docx")
         guid = one("guid", "")
         ptype = one("projectType", "")
+        title = one("title", "")
 
-        res = run_check(data, name, guid, ptype)
+        res = run_check(data, name, guid, ptype, title)
         if res.get("ok"):
             try:
                 saved = save_check(name, guid, ptype, res["data"], res.get("text") or "")

@@ -23,6 +23,20 @@ header h1{font-size:15px;font-weight:700;margin:0;letter-spacing:.3px}
 header .proj{flex:1;max-width:460px}
 header .proj input{width:100%;padding:5px 9px;border:1px solid var(--line);background:#FBFAF7;font:13px var(--f);color:var(--ink)}
 header .ver{font:12px var(--m);color:var(--ink-3)}
+/* 顶部导航：7 个页面统一 */
+nav.topnav{display:flex;gap:2px;flex:none}
+nav.topnav a{font-size:13px;color:var(--ink-2);text-decoration:none;padding:5px 9px;border-bottom:2px solid transparent;white-space:nowrap}
+nav.topnav a:hover{color:var(--accent)}
+nav.topnav a.on{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+/* 项目搜索下拉 */
+header .proj{position:relative}
+.sug{position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid var(--line);max-height:320px;overflow:auto;display:none;z-index:20;box-shadow:0 2px 6px rgba(0,0,0,.06)}
+.sug.on{display:block}
+.sug div{padding:7px 10px;font-size:12.5px;cursor:pointer;border-bottom:1px solid var(--line-2);line-height:1.45}
+.sug div:last-child{border-bottom:0}
+.sug div:hover{background:#FBFAF7}
+.sug .m{display:block;font:11px var(--m);color:var(--ink-3);margin-top:2px}
+.sug .none{color:var(--ink-3);cursor:default;font-size:12px}
 
 /* 布局 */
 main{display:flex;height:calc(100% - 52px)}
@@ -135,7 +149,19 @@ a.lnk{color:var(--accent);text-decoration:none;cursor:pointer;border-bottom:1px 
 <body>
 <header>
   <h1>技术标自检</h1>
-  <div class="proj"><input id="guid" type="text" placeholder="项目 guid 或标题关键词（留空则只做通用检查）"></div>
+  <nav class="topnav">
+    <a href="/">数据</a>
+    <a href="/check" class="on">自检</a>
+    <a href="/project">项目</a>
+    <a href="/digest">日报</a>
+    <a href="/buyers.html">招标人</a>
+    <a href="/model.html">模型</a>
+    <a href="/simulator.html">模拟</a>
+  </nav>
+  <div class="proj">
+    <input id="guid" type="text" placeholder="搜项目名或输 guid（留空只做通用检查）" autocomplete="off">
+    <div class="sug" id="sug"></div>
+  </div>
   <span class="ver" id="ver">规则 —</span>
 </header>
 
@@ -184,6 +210,51 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let picked = null;
 let CUR = null; // 当前结果对应的历史文件名；点证据行号时要靠它去取原文
+
+// ---------- 项目搜索（下拉建议） ----------
+// 为什么需要：以前要手输 guid，而 guid 没人记得住。
+// 失焦延迟 180ms 再收起，否则点不到建议项。
+const inp = $('guid');
+const sug = $('sug');
+let sugTimer = null;
+let sugItems = [];
+
+inp.addEventListener('input', () => {
+  clearTimeout(sugTimer);
+  const q = inp.value.trim();
+  if (!q) { sug.classList.remove('on'); return; }
+  sugTimer = setTimeout(async () => {
+    try {
+      const j = await (await fetch('/api/search?q=' + encodeURIComponent(q) + '&limit=10')).json();
+      sugItems = j.items || [];
+      if (!sugItems.length) {
+        sug.innerHTML = '<div class="none">没有匹配项目（也可以直接把这个词当标题用）</div>';
+        sug.classList.add('on');
+        return;
+      }
+      sug.innerHTML = sugItems.map((x, i) =>
+        `<div data-i="${i}">${esc(x.title)}<span class="m">${esc(x.city || '')} · ${esc(x.pub_date || '')}</span></div>`
+      ).join('');
+      sug.classList.add('on');
+      [...sug.querySelectorAll('div[data-i]')].forEach((el) => {
+        el.onclick = () => {
+          const it = sugItems[Number(el.dataset.i)];
+          inp.value = it.guid;
+          inp.dataset.title = it.title;
+          sug.classList.remove('on');
+        };
+      });
+    } catch { /* 搜索失败不影响手输 */ }
+  }, 280);
+});
+inp.addEventListener('blur', () => setTimeout(() => sug.classList.remove('on'), 180));
+
+// 从项目全景页跳过来时带 ?guid=&title=
+const _qp = new URLSearchParams(location.search);
+if (_qp.get('guid')) {
+  inp.value = _qp.get('guid');
+  if (_qp.get('title')) inp.dataset.title = _qp.get('title');
+}
 
 // ---------- 原文抽屉 ----------
 function closeDrawer() { $('drawer').classList.remove('on'); }
@@ -249,7 +320,15 @@ $('go').onclick = async () => {
   $('go').textContent = '检查中…（3-5 秒）';
   $('out').innerHTML = '<div class="empty">正在跑 147 条规则 + 清单覆盖 + 工程本体信号…</div>';
   try {
-    const qs = new URLSearchParams({ name: picked.name, guid: $('guid').value.trim(), projectType: $('ptype').value });
+    // guid 形态（含连字符的长串）走 --guid，否则当标题关键词走 --title
+    const val = $('guid').value.trim();
+    const isGuid = /^[0-9a-f]{8}-[0-9a-f]{4}/i.test(val);
+    const qs = new URLSearchParams({
+      name: picked.name,
+      projectType: $('ptype').value,
+      ...(isGuid ? { guid: val } : {}),
+      ...(!isGuid && val ? { title: inp.dataset.title || val } : {}),
+    });
     const r = await fetch('/api/check?' + qs.toString(), { method: 'POST', body: picked });
     const j = await r.json();
     if (!j.ok) throw new Error(j.error || '自检失败');

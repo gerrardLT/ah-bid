@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>项目全景 · 技术标数据底座</title>
+<style>
+:root{
+  --bg:#EFEDE8;--panel:#fff;--line:#D5D1C7;--line-2:#E9E6DF;
+  --ink:#0A0A09;--ink-2:#3B3630;--ink-3:#6E675E;
+  --accent:#C8371A;--accent-lite:#FF6A45;
+  --bad:#C8371A;--warn:#B26A00;--ok:#2E6B3E;
+  --f:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  --m:"SF Mono","JetBrains Mono",Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.65 var(--f);-webkit-font-smoothing:antialiased}
+header{height:52px;display:flex;align-items:center;gap:16px;padding:0 18px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:10}
+header h1{font-size:15px;font-weight:700;margin:0;letter-spacing:.3px;white-space:nowrap}
+nav{display:flex;gap:2px;flex:1;overflow:auto}
+nav a{font-size:13px;color:var(--ink-2);text-decoration:none;padding:5px 10px;border-bottom:2px solid transparent;white-space:nowrap}
+nav a:hover{color:var(--accent)}
+nav a.on{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+main{max-width:1280px;margin:0 auto;padding:18px 22px 80px}
+
+/* 搜索 */
+.search{display:flex;gap:8px;margin-bottom:14px}
+.search input{flex:1;padding:8px 11px;border:1px solid var(--line);background:var(--panel);font:14px var(--f)}
+.search button{padding:8px 18px;border:0;background:var(--accent);color:#fff;font:600 14px var(--f);cursor:pointer}
+.search button:hover{background:var(--accent-lite)}
+.hits{border:1px solid var(--line);background:var(--panel);margin-bottom:16px;display:none}
+.hits.on{display:block}
+.hits li{list-style:none;padding:8px 12px;border-bottom:1px solid var(--line-2);cursor:pointer;font-size:13px}
+.hits li:hover{background:#FBFAF7}
+.hits li:last-child{border-bottom:0}
+.hits .mt{font:11.5px var(--m);color:var(--ink-3);margin-left:8px}
+.hits ul{margin:0;padding:0}
+
+/* 项目头 */
+.ptitle{font-size:20px;font-weight:700;line-height:1.4;margin:0 0 8px}
+.pmeta{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-3);margin-bottom:14px}
+.pmeta b{color:var(--ink-2);font-weight:600}
+.tag{display:inline-block;font-size:11.5px;padding:1px 8px;border:1px solid var(--line);background:#F5F3EE;color:var(--ink-2)}
+.tag.pv{background:#FFF6E5;border-color:#E8C77A;color:#8A5B00}
+.tag.power{background:#EEF3FF;border-color:#A9BEE8;color:#22467F}
+.tag.storage{background:#EFF7EE;border-color:#A9CFA3;color:#2E6B3E}
+
+/* KPI */
+.kpi{display:flex;flex-wrap:wrap;border:1px solid var(--line);background:var(--panel);margin-bottom:16px}
+.kpi div{flex:1 1 150px;padding:11px 15px;border-right:1px solid var(--line-2)}
+.kpi div:last-child{border-right:0}
+.kpi b{display:block;font:600 20px/1.2 var(--m);letter-spacing:-.5px}
+.kpi span{display:block;font-size:11px;color:var(--ink-3);margin-top:3px;letter-spacing:.4px}
+
+/* 分区 */
+section{background:var(--panel);border:1px solid var(--line);margin-bottom:12px}
+section>h2{font-size:13px;font-weight:600;margin:0;padding:10px 14px;border-bottom:1px solid var(--line-2);display:flex;align-items:baseline;gap:8px}
+section>h2 em{font:11.5px var(--m);color:var(--ink-3);font-style:normal;font-weight:400;margin-left:auto}
+.body{padding:12px 14px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{text-align:left;padding:6px 10px;background:#F5F3EE;border-bottom:1px solid var(--line);font-weight:600;color:var(--ink-2);white-space:nowrap}
+td{padding:6px 10px;border-bottom:1px solid var(--line-2);vertical-align:top}
+td.k{white-space:nowrap;font:11.5px var(--m);color:var(--ink-3)}
+tr:last-child td{border-bottom:0}
+dl{display:grid;grid-template-columns:110px 1fr;gap:5px 12px;margin:0;font-size:13px}
+dt{color:var(--ink-3);font-size:12.5px}
+dd{margin:0}
+.muted{color:var(--ink-3);font-size:12.5px}
+pre{white-space:pre-wrap;word-break:break-word;font:12.5px/1.75 var(--m);margin:0;max-height:420px;overflow:auto}
+.more{color:var(--accent);cursor:pointer;font-size:12.5px;margin-top:6px;display:inline-block}
+.btn{display:inline-block;padding:9px 18px;background:var(--accent);color:#fff;text-decoration:none;font-weight:600;font-size:14px}
+.btn:hover{background:var(--accent-lite)}
+.btn.ghost{background:#fff;color:var(--accent);border:1px solid var(--accent)}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
+.err{border:1px solid var(--bad);background:#FFF6F3;color:#8A2A12;padding:10px 14px;margin-bottom:14px;font-size:13px}
+.empty{color:var(--ink-3);padding:50px 0;text-align:center}
+a.lnk{color:var(--accent);text-decoration:none;border-bottom:1px dotted var(--accent)}
+
+@media (max-width:820px){
+  .kpi div{flex:1 1 50%}
+  dl{grid-template-columns:88px 1fr}
+  main{padding:14px}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>项目全景</h1>
+  <nav>
+    <a href="/">数据</a>
+    <a href="/check">自检</a>
+    <a href="/project" class="on">项目</a>
+    <a href="/digest">日报</a>
+    <a href="/buyers.html">招标人</a>
+    <a href="/model.html">模型</a>
+    <a href="/simulator.html">模拟</a>
+  </nav>
+</header>
+
+<main>
+  <div class="search">
+    <input id="q" type="text" placeholder="输入项目名关键词或 guid，回车搜索">
+    <button id="go">搜索</button>
+  </div>
+  <div class="hits" id="hits"><ul id="hitlist"></ul></div>
+  <div id="out"><div class="empty">搜索一个项目，看它的全部信息<br><br>附件 · 评分办法 · 澄清 · 中标 · 清单 · 正文</div></div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const TAG = { pv: '光伏', storage: '储能', power: '电力', building: '房建' };
+const NAT = { '1': '招标公告', '2': '中标候选人公示', '3': '中标结果公告' };
+const wan = (n) => n == null ? '—' : (n / 1e4).toFixed(0) + ' 万';
+const kb = (n) => n == null ? '—' : (n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.round(n / 1024) + ' KB');
+
+// ---------- 搜索 ----------
+async function doSearch() {
+  const q = $('q').value.trim();
+  if (!q) return;
+  const r = await fetch('/api/search?q=' + encodeURIComponent(q));
+  const j = await r.json();
+  const items = j.items || [];
+  if (!items.length) { $('hits').classList.add('on'); $('hitlist').innerHTML = '<li class="muted">没找到匹配项目</li>'; return; }
+  $('hits').classList.add('on');
+  $('hitlist').innerHTML = items.map((x) =>
+    `<li data-g="${esc(x.guid)}">${esc(x.title)}<span class="mt">${esc(x.city || '')} · ${esc(x.pub_date || '')} · ${esc(NAT[x.bulletin_nature] || '')}</span></li>`
+  ).join('');
+  [...document.querySelectorAll('#hitlist li[data-g]')].forEach((li) => {
+    li.onclick = () => { $('hits').classList.remove('on'); load(li.dataset.g); };
+  });
+}
+$('go').onclick = doSearch;
+$('q').onkeydown = (e) => { if (e.key === 'Enter') doSearch(); };
+
+// ---------- 全景 ----------
+async function load(guid) {
+  $('out').innerHTML = '<div class="empty">载入中…</div>';
+  history.replaceState(null, '', '/project?g=' + encodeURIComponent(guid));
+  const r = await fetch('/api/project?g=' + encodeURIComponent(guid));
+  const j = await r.json();
+  if (!j.ok) { $('out').innerHTML = `<div class="err">${esc(j.error)}</div>`; return; }
+  render(j.data);
+}
+
+function render(d) {
+  const a = d.announcement;
+  const prices = d.prices || [];
+  const price = prices.length ? Math.max(...prices.map((p) => p.amount || 0)) : null;
+  const durs = (d.durations || []).map((x) => x.days).filter(Boolean);
+  const dur = durs.length ? Math.max(...durs) : null;
+  const atts = d.attachments || [];
+  const clar = d.clarifications || [];
+  const doc = d.doc;
+  const res = d.result;
+
+  let h = `<div class="ptitle">${esc(a.title)}</div>
+  <div class="pmeta">
+    <span>${esc(a.city || '')}${a.district ? ' · ' + esc(a.district) : ''}</span>
+    <span><b>${esc(a.pub_date || '')}</b></span>
+    <span class="tag ${esc(a.primary_tag || '')}">${esc(TAG[a.primary_tag] || a.primary_tag || '未分类')}</span>
+    <span>${esc(NAT[a.bulletin_nature] || '')}</span>
+    <span>正文 ${a.body_chars.toLocaleString('zh-CN')} 字</span>
+    ${a.origin_url ? `<a class="lnk" href="${esc(a.origin_url)}" target="_blank" rel="noreferrer">原始公告</a>` : ''}
+  </div>`;
+
+  h += '<div class="kpi">'
+    + `<div><b>${wan(price)}</b><span>限价</span></div>`
+    + `<div><b>${dur ?? '—'}</b><span>工期（天）</span></div>`
+    + `<div><b>${atts.length}</b><span>附件</span></div>`
+    + `<div><b>${d.scoring_rows || 0}</b><span>评分表行</span></div>`
+    + `<div><b>${clar.length}</b><span>澄清</span></div>`
+    + `<div><b>${res && res.winner_price ? wan(res.winner_price) : '—'}</b><span>中标价</span></div>`
+    + '</div>';
+
+  // 附件
+  h += '<section><h2>附件<em>' + atts.length + ' 个</em></h2>';
+  if (!atts.length) h += '<div class="body muted">本条公告没有下载到附件（站点可能只发正文，或详情页是跳转壳）</div>';
+  else {
+    h += '<table><thead><tr><th>文件名</th><th style="width:70px">类型</th><th style="width:80px">大小</th><th style="width:70px">状态</th></tr></thead><tbody>'
+      + atts.map((x) => {
+        const can = x.status === 'ok' && x.local_path;
+        const name = can
+          ? `<a class="lnk" href="/api/file?p=${encodeURIComponent(x.local_path)}" target="_blank" rel="noreferrer">${esc(x.filename)}</a>`
+          : esc(x.filename);
+        // 类型取文件名的真实扩展名：库里 ext 是按文件魔数判的，
+        // .docx/.xlsx 本质是 zip，会显示成 .zip，用户看了困惑
+        const extShow = ((x.filename || '').match(/\.[a-z0-9]{1,6}$/i) || [''])[0] || x.ext || '';
+        return `<tr><td>${name}</td><td class="k">${esc(extShow)}</td><td class="k">${kb(x.size_bytes)}</td><td class="k">${esc(x.status)}</td></tr>`;
+      }).join('') + '</tbody></table>';
+  }
+  h += '</section>';
+
+  // 评分办法
+  h += '<section><h2>评分办法<em>' + (doc ? '来自招标文件解析' : '未解析') + '</em></h2><div class="body">';
+  if (!doc) h += '<div class="muted">该项目的招标文件还没解析（只有 8.9% 的公告有解析记录）</div>';
+  else {
+    h += '<dl>'
+      + `<dt>评标办法</dt><dd>${esc(doc.evaluation_method || '—')}</dd>`
+      + `<dt>技术分 / 商务分 / 价格分</dt><dd>${doc.score_technical ?? '—'} / ${doc.score_commercial ?? '—'} / ${doc.score_price ?? '—'}</dd>`
+      + `<dt>评分表行数</dt><dd>${d.scoring_rows || 0} 行${doc.scoring_table_count ? `（表格 ${doc.scoring_table_count} 张）` : ''}</dd>`
+      + `<dt>页数</dt><dd>${doc.pages ?? '—'}</dd>`
+      + (doc.weight_note ? `<dt>备注</dt><dd class="muted">${esc(doc.weight_note)}</dd>` : '')
+      + '</dl>';
+  }
+  h += '</div></section>';
+
+  // 澄清
+  h += `<section><h2>澄清问答<em>${clar.length} 条 · 涉评分 ${clar.filter((x) => (x.affects || '').includes('评分')).length} 条</em></h2>`;
+  if (!clar.length) h += '<div class="body muted">本项目没有澄清答疑</div>';
+  else {
+    h += '<table><thead><tr><th style="width:36px">#</th><th>问题</th><th style="width:90px">影响面</th></tr></thead><tbody>'
+      + clar.slice(0, 30).map((x, i) => {
+        const q = esc((x.question || '').slice(0, 90));
+        const ans = esc((x.answer || '').slice(0, 220));
+        return `<tr><td class="k">${x.seq ?? i + 1}</td><td><details><summary style="cursor:pointer">${q}</summary><div class="muted" style="margin-top:6px;white-space:pre-wrap">${ans}</div></details></td><td class="k">${esc(x.affects || '—')}</td></tr>`;
+      }).join('') + '</tbody></table>';
+    if (clar.length > 30) h += `<div class="body muted">还有 ${clar.length - 30} 条，请到数据浏览器查看</div>`;
+  }
+  h += '</section>';
+
+  // 中标
+  if (res) {
+    h += '<section><h2>中标结果</h2><div class="body"><dl>'
+      + `<dt>中标人</dt><dd>${esc(res.winner || '—')}</dd>`
+      + `<dt>中标价</dt><dd>${res.winner_price ? res.winner_price.toLocaleString('zh-CN') + ' 元（' + wan(res.winner_price) + '）' : '—'}</dd>`
+      + (res.price_min && res.price_max ? `<dt>报价区间</dt><dd>${wan(res.price_min)} ~ ${wan(res.price_max)}</dd>` : '')
+      + (res.bidder_count ? `<dt>投标家数</dt><dd>${res.bidder_count}</dd>` : '')
+      + '</dl></div></section>';
+  }
+
+  // 清单
+  if (d.boq) {
+    h += `<section><h2>工程量清单<em>私有清单库匹配</em></h2><div class="body"><dl>`
+      + `<dt>匹配项目</dt><dd>${esc(d.boq.project)}</dd>`
+      + `<dt>清单项数</dt><dd>${d.boq.rows.toLocaleString('zh-CN')} 项</dd>`
+      + `</dl></div></section>`;
+  }
+
+  // 正文
+  h += `<section><h2>公告正文<em>${a.body_chars.toLocaleString('zh-CN')} 字</em></h2><div class="body"><pre id="body">${esc(a.body_head)}</pre>`;
+  if (a.body_chars > 800) h += `<span class="more" id="expand">展开全文</span>`;
+  h += '</div></section>';
+
+  // 操作
+  h += `<div class="actions">
+    <a class="btn" href="/check?guid=${encodeURIComponent(a.guid)}&title=${encodeURIComponent(a.title)}">上传标书自检</a>
+    <a class="btn ghost" href="/?t=announcement&q=${encodeURIComponent(a.guid)}">在数据浏览器里看</a>
+    ${a.origin_url ? `<a class="btn ghost" href="${esc(a.origin_url)}" target="_blank" rel="noreferrer">原始公告</a>` : ''}
+  </div>`;
+
+  $('out').innerHTML = h;
+
+  const ex = $('expand');
+  if (ex) ex.onclick = async () => {
+    // 正文可能超 3 万字被截断，这里只在已下发全量时展开
+    if (a.body_full) { $('body').textContent = a.body_full; ex.style.display = 'none'; }
+    else { ex.textContent = '正文过长（>3 万字），请用数据浏览器查看'; ex.style.cursor = 'default'; }
+  };
+}
+
+// ---------- 启动 ----------
+const g = new URLSearchParams(location.search).get('g');
+if (g) { $('q').value = g; load(g); }
+</script>
+</body>
+</html>

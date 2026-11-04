@@ -116,6 +116,27 @@ if (rows.length) {
 
 const text = lines.join('\n');
 
+// --json：给面板用。前端不重算分组逻辑，避免和 Markdown 两套口径。
+if (process.argv.includes('--json')) {
+  const groups = [...byTag.entries()]
+    .sort((a, b) => b[1].length - a[1].length)
+    .map(([tag, items]) => ({
+      tag,
+      count: items.length,
+      items: items.slice(0, 30).map((it) => ({
+        guid: it.guid,
+        title: it.title,
+        city: it.city,
+        pubDate: it.pubDate,
+        amount: it.amount,
+        days: it.days,
+        url: it.url,
+      })),
+    }));
+  console.log(JSON.stringify({ date: today, days: DAYS, total: rows.length, groups }, null, 2));
+  process.exit(0);
+}
+
 // ---------------- 落盘 ----------------
 mkdirSync(dirname(OUT), { recursive: true });
 writeFileSync(OUT, text, 'utf8');

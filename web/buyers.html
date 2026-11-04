@@ -438,5 +438,22 @@ fetch('/buyers.json').then(r => r.json()).then(async d => {
   $('tb').innerHTML = `<tr><td colspan="8" style="padding:20px;color:#B32D12">加载失败：${esc(e.message)}</td></tr>`;
 });
 </script>
+<!-- NAVX_MARK 浮动导航：不占文档流，避免破坏旧页面的 100vh 布局 -->
+<div id="navx" style="position:fixed;right:14px;bottom:14px;z-index:99999;
+     font:13px/1.5 -apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <div id="navm" style="display:none;position:absolute;right:0;bottom:100%;margin-bottom:6px;
+       background:#fff;border:1px solid #D5D1C7;min-width:112px">
+    <a href="/" style="display:block;padding:7px 12px;color:#3B3630;text-decoration:none;border-bottom:1px solid #E9E6DF">数据浏览器</a>
+    <a href="/check" style="display:block;padding:7px 12px;color:#3B3630;text-decoration:none;border-bottom:1px solid #E9E6DF">技术标自检</a>
+    <a href="/project" style="display:block;padding:7px 12px;color:#3B3630;text-decoration:none;border-bottom:1px solid #E9E6DF">项目全景</a>
+    <a href="/digest" style="display:block;padding:7px 12px;color:#3B3630;text-decoration:none;border-bottom:1px solid #E9E6DF">招标日报</a>
+    <a href="/buyers.html" style="display:block;padding:7px 12px;color:#3B3630;text-decoration:none;border-bottom:1px solid #E9E6DF">招标人画像</a>
+    <a href="/model.html" style="display:block;padding:7px 12px;color:#3B3630;text-decoration:none;border-bottom:1px solid #E9E6DF">八维模型</a>
+    <a href="/simulator.html" style="display:block;padding:7px 12px;color:#3B3630;text-decoration:none">决策模拟器</a>
+  </div>
+  <button onclick="var m=document.getElementById('navm');m.style.display=m.style.display==='block'?'none':'block'"
+    style="padding:7px 13px;border:1px solid #D5D1C7;background:#fff;cursor:pointer;color:#3B3630;
+           font:600 12.5px -apple-system,'PingFang SC','Microsoft YaHei',sans-serif">导航</button>
+</div>
 </body>
 </html>
