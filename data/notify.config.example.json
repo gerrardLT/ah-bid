@@ -1,0 +1,15 @@
+{
+  "_说明": "复制为 data/notify.config.json 后填写。任填一个渠道即可，都不填则只写 output/digest.md。",
+  "_企业微信": "群机器人 webhook，形如 https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx",
+  "wecom": {
+    "webhook": ""
+  },
+  "_邮件": "QQ/163/企业邮箱都行。465 走 SSL，587 走 STARTTLS。pass 用授权码不是登录密码。",
+  "smtp": {
+    "host": "",
+    "port": 465,
+    "user": "",
+    "pass": "",
+    "to": ""
+  }
+}

@@ -32,3 +32,5 @@ data/__pycache__/
 # Python 编译缓存，任何目录下都不入库
 __pycache__/
 *.pyc
+
+data/notify.config.json

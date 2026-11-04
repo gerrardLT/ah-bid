@@ -27,5 +27,13 @@ node --no-warnings src\crawl.ts --natures=1,2,3 --since=$since --reset=all `
     >> data\crawl.log 2>> data\crawl.err
 
 $code = $LASTEXITCODE
+
+# 抓完立刻出日报并推送。
+# --days=2 而不是 1：跨天边界（凌晨跑时"昨天"的公告也要覆盖）。
+# 推送渠道读 data/notify.config.json，没配就只写 output/digest.md，不报错。
+node --no-warnings src\daily-digest.ts --days=2 --send >> data\crawl.log 2>> data\crawl.err
+$digestCode = $LASTEXITCODE
+if ($digestCode -ne 0) { "日报生成/推送失败 exit=$digestCode" | Out-File -Append -Encoding utf8 data\crawl.err }
+
 "=== $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') 结束 exit=$code ===" | Out-File -Append -Encoding utf8 data\crawl.log
 exit $code
