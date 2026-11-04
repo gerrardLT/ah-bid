@@ -59,7 +59,13 @@ function parseArgs(argv: string[]): Args {
 const args = parseArgs(process.argv.slice(2));
 const db = new IndexDb(args.db);
 
-for (const [t, n] of args.reset) {
+// --reset=all：重置所有 types × natures 组合。
+// 日常增量必须用它 —— 断点已 finished=1 时直接跑会自动跳过（日志里那句提醒），
+// 而逐个列 15 个组合（1:1,1:2,...,5:3）在 bat/计划任务里没法维护。
+const resetPairs: Array<[string, string]> = args.reset.some(([t]) => t === 'all')
+  ? args.types.flatMap((t) => args.natures.map((n) => [t, n] as [string, string]))
+  : args.reset;
+for (const [t, n] of resetPairs) {
   db.saveCrawlState(t, n, 1, false, 0);
   console.log(`已重置断点 ${t}:${n}`);
 }
