@@ -24,7 +24,7 @@ import { dirname, join } from 'node:path';
 
 import { DatabaseSync } from 'node:sqlite';
 
-import { normalizeTitle, typeOfTitle } from './lib/price-stats.ts';
+import { normalizeTitle, segmentOfTitle, typeOfTitle } from './lib/price-stats.ts';
 
 const DRY = process.argv.includes('--dry');
 const OUT = 'data/agg/facts.json';
@@ -38,6 +38,8 @@ interface Fact {
   pubDate: string;
   /** typeOfTitle 推断：房建/市政/水利/电力/光伏/园林/智能化/监理设计/其他 */
   type: string;
+  /** 在 type 基础上把「其他」再分一次（只对 type==='其他' 生效，其余与 type 相同） */
+  segment: string;
   /** announcement.primary_tag，62% 为空，只作辅助 */
   tag: string | null;
   winner: string | null;
@@ -143,6 +145,7 @@ for (const w of wins) {
     city: w.city,
     pubDate: (w.pubDate || '').slice(0, 10),
     type: typeOfTitle(w.title || ''),
+    segment: segmentOfTitle(w.title || ''),
     tag: tagByGuid.get(w.guid) ?? null,
     winner: w.winner,
     winPrice: w.winPrice,

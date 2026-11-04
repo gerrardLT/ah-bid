@@ -115,7 +115,7 @@ async function loadGrid() {
   $('out').innerHTML = '<div class="empty">载入中…</div>';
   let j;
   try {
-    const q = new URLSearchParams();
+    const q = new URLSearchParams({ x: 'segment' });
     if (S.since) q.set('since', S.since);
     if (S.until) q.set('until', S.until);
     j = await (await fetch('/api/market-grid?' + q)).json();

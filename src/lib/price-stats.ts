@@ -17,6 +17,8 @@
 
 import type { DatabaseSync } from 'node:sqlite';
 
+import { segmentOf } from './market-segment.ts';
+
 export type Caliber = 'limit' | 'estimate' | 'mixed';
 
 /** 口径 → 纳入的价格类型。mixed 是默认展示口径，分析时必须分层。 */
@@ -65,6 +67,19 @@ const TYPE_KW: Record<string, string[]> = {
 export function typeOfTitle(title: string): string {
   for (const [t, kws] of Object.entries(TYPE_KW)) if (kws.some((k) => title.includes(k))) return t;
   return '其他';
+}
+
+/**
+ * 「其他」的细分（只对 typeOfTitle 认不出的标题生效）。
+ *
+ * 为什么不在 TYPE_KW 里加词：那会让 410 个价格配对重新分类，
+ * 而四道闸门没有一条检查分类分布 —— 改坏了发现不了。
+ * 构造上保证「其余 8 类逐类相等」：能走到 segmentOf 的只有 base === '其他' 的标题。
+ */
+export function segmentOfTitle(title: string): string {
+  const base = typeOfTitle(title);
+  if (base !== '其他') return base;
+  return segmentOf(title) ?? '其他';
 }
 
 export interface PricePair {
