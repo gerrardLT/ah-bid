@@ -292,7 +292,8 @@ async function loadPriceRef(guid, limit) {
   }
 
   let h = '<dl>'
-    + `<dt>本项目限价</dt><dd>${money(d.limit)}</dd>`
+    + `<dt>${d.limitKind === '估算' ? '合同估算价（非投标上限）' : d.limitKind === '预算' ? '预算金额' : '最高投标限价'}</dt>`
+    + `<dd>${money(d.limit)}</dd>`
     + `<dt>同类（${esc(d.type)}）</dt><dd>中位下浮 <b>${d.same ? pct(d.same.p50) : '—'}</b>`
     + (d.same
         ? `（P25 ${pct(d.same.p25)} ~ P75 ${pct(d.same.p75)}，n=${d.sameN}）`
@@ -301,6 +302,11 @@ async function loadPriceRef(guid, limit) {
     + `<dt>全库</dt><dd>中位下浮 ${pct(d.all.p50)}（n=${d.all.n}）</dd>`;
   if (d.suggest) {
     h += `<dt>建议报价</dt><dd><b>${money(d.suggest.low)} ~ ${money(d.suggest.high)}</b>　中位 ${money(d.suggest.mid)}</dd>`;
+  }
+  // 项目本身是估算价、但估算口径样本不够时，下浮率用的是限价口径 —— 必须说出来，
+  // 否则用户以为这个区间是按估算市场算的。
+  if (d.limitKind === '估算' && d.basis === 'limit') {
+    h += '<dt>下浮率口径</dt><dd><span class="muted">估算口径样本不足，借用限价口径基准</span></dd>';
   }
   h += '</dl>';
 

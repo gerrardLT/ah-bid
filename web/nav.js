@@ -20,9 +20,11 @@
     {
       label: '报价',
       children: [
-        { href: '/buyers.html', label: '招标人画像' },
-        { href: '/model.html', label: '八维模型' },
-        { href: '/simulator.html', label: '决策模拟' },
+        // 竞争格局是实时聚合（读 facts.json），后面三项是静态快照 —— 名字里标出来
+        { href: '/market.html', label: '竞争格局' },
+        { href: '/buyers.html', label: '招标人画像（快照）' },
+        { href: '/model.html', label: '八维模型（快照）' },
+        { href: '/simulator.html', label: '决策模拟（快照）' },
       ],
     },
     { href: '/', label: '数据' },

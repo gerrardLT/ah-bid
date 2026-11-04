@@ -16,7 +16,7 @@
 
 import { DatabaseSync } from 'node:sqlite';
 
-import { collectPairs, summarize, typeOfTitle } from './lib/price-stats.ts';
+import { collectPairs, projectPrice, summarize, typeOfTitle, type Caliber } from './lib/price-stats.ts';
 
 const argOf = (k: string): string | undefined => {
   const hit = process.argv.find((a) => a.startsWith(`--${k}=`));
@@ -41,13 +41,25 @@ if (!ann) {
   throw new Error('project not found');
 }
 
-const pr = db
-  .prepare('SELECT MAX(amount) AS a FROM tender_control_price WHERE announcement_guid = ?')
-  .get(GUID) as { a: number | null } | undefined;
-const limit = pr?.a ?? null;
+// 本项目价格：走全站唯一入口，带口径（限价/估算/预算）。
+// 原来这里是 SELECT MAX(amount) 不区分口径 —— 494 个"只有估算"的项目
+// 会被当成投标上限去乘 (1−下浮率)，建议报价系统性偏高。
+const price = projectPrice(db, GUID);
+const limit = price.amount;
 
 const type = typeOfTitle(ann.title);
-const { pairs, ctrlProjects, winProjects } = collectPairs(db, 'limit');
+
+// 口径回退：项目本身是估算价时，优先用估算口径的下浮率。
+// 但实测估算口径只有 51 对配对，样本不足就退回限价口径并显式标注 ——
+// 宁可告诉用户"这里用的是限价口径"，也不要拿 8 个样本算出一个看起来精确的中位数。
+let caliber: Caliber = price.kind === '估算' ? 'estimate' : 'limit';
+let res = collectPairs(db, caliber);
+let basisOn: Caliber = caliber;
+if (caliber === 'estimate' && res.pairs.length < 30) {
+  res = collectPairs(db, 'limit');
+  basisOn = 'limit';
+}
+const { pairs, ctrlProjects, winProjects } = res;
 db.close();
 
 const same = pairs.filter((p) => p.type === type);
@@ -78,6 +90,10 @@ out({
     pubDate: ann.pubDate,
     type,
     limit,
+    /** 限价 | 估算 | 预算 | null —— 页面据此决定标「限价」还是「估算价（非投标上限）」 */
+    limitKind: price.kind,
+    /** 下浮率取自哪个口径。项目是估算价但这里写 limit，说明估算样本不足、用了限价基准 */
+    basis: basisOn,
     sameN: same.length,
     same: sameStat,
     all: allStat,

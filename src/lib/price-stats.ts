@@ -109,6 +109,40 @@ function singlePrice<T>(items: T[], pick: (x: T) => number): T | null {
 }
 
 /**
+ * 单项目价格（全站唯一入口）。
+ *
+ * 为什么要单独一个函数：库里 494 个公告**只有估算没有限价**，而三处调用都在用
+ * `MAX(amount)` 不区分 price_kind —— 估算价被当成"投标上限"去乘 (1−限价口径下浮率)，
+ * 建议报价会系统性偏高。全站只允许这一个地方回答"这个项目多少钱"。
+ *
+ * 优先级：限价 > 估算 > 预算。同一公告同一口径有多行（多标段）时取最大，
+ * 并在 kind 上标注，让页面能显示"估算价（非投标上限）"。
+ */
+export interface ProjectPrice {
+  amount: number | null;
+  /** 限价 | 估算 | 预算 | null */
+  kind: string | null;
+  /** 同口径有几行（>1 说明多标段，金额取的是最大值） */
+  rows: number;
+}
+
+const PRICE_RANK: Record<string, number> = { 限价: 0, 估算: 1, 预算: 2, 其他: 3 };
+
+export function projectPrice(db: DatabaseSync, guid: string): ProjectPrice {
+  if (!guid) return { amount: null, kind: null, rows: 0 };
+  const rows = db
+    .prepare(
+      `SELECT price_kind AS kind, MAX(amount) AS amount, COUNT(*) AS n
+       FROM tender_control_price WHERE announcement_guid = ? AND amount > 1000
+       GROUP BY price_kind`,
+    )
+    .all(guid) as unknown as Array<{ kind: string; amount: number; n: number }>;
+  if (rows.length === 0) return { amount: null, kind: null, rows: 0 };
+  rows.sort((a, b) => (PRICE_RANK[a.kind] ?? 9) - (PRICE_RANK[b.kind] ?? 9));
+  return { amount: rows[0].amount, kind: rows[0].kind, rows: rows[0].n };
+}
+
+/**
  * 取控制价：同一项目名（归一化后）有多个不同金额 → 丢弃，避免把多标段的
  * 分标段限价当成整个项目，或反过来。
  */

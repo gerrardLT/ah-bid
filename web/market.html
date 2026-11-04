@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>竞争格局 · 技术标数据底座</title>
+<style>
+:root{
+  --bg:#EFEDE8;--panel:#fff;--line:#D5D1C7;--line-2:#E9E6DF;
+  --ink:#0A0A09;--ink-2:#3B3630;--ink-3:#6E675E;
+  --accent:#C8371A;--ok:#2E6B3E;--warn:#B26A00;
+  --f:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  --m:"SF Mono","JetBrains Mono",Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.65 var(--f);-webkit-font-smoothing:antialiased}
+header{height:52px;display:flex;align-items:center;gap:16px;padding:0 18px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:20}
+header h1{font-size:15px;font-weight:700;margin:0;white-space:nowrap}
+header .meta{margin-left:auto;font:11.5px var(--m);color:var(--ink-3);white-space:nowrap}
+main{max-width:1240px;margin:0 auto;padding:16px 20px 80px}
+
+.tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.tabs button{padding:7px 16px;border:1px solid var(--line);background:var(--panel);font:13px var(--f);cursor:pointer;color:var(--ink-2)}
+.tabs button.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;background:var(--panel);border:1px solid var(--line);padding:10px 12px;margin-bottom:12px}
+.filters select,.filters input{padding:6px 8px;border:1px solid var(--line);background:#FBFAF7;font:13px var(--f)}
+.filters input{width:110px}
+.filters .hint{font:11.5px var(--m);color:var(--ink-3)}
+.filters .clr{border:0;background:transparent;color:var(--ink-3);font:12.5px var(--f);cursor:pointer;text-decoration:underline}
+
+.kpi{display:flex;flex-wrap:wrap;border:1px solid var(--line);background:var(--panel);margin-bottom:12px}
+.kpi div{flex:1 1 140px;padding:10px 15px;border-right:1px solid var(--line-2)}
+.kpi div:last-child{border-right:0}
+.kpi b{display:block;font:600 21px/1.2 var(--m)}
+.kpi span{display:block;font-size:11px;color:var(--ink-3);margin-top:2px}
+
+section{background:var(--panel);border:1px solid var(--line);margin-bottom:12px}
+section>h2{font-size:13px;font-weight:600;margin:0;padding:9px 14px;border-bottom:1px solid var(--line-2);display:flex;gap:8px;align-items:baseline}
+section>h2 em{font:11.5px var(--m);color:var(--ink-3);font-style:normal;margin-left:auto}
+
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font:500 11.5px var(--m);color:var(--ink-3);padding:7px 10px;border-bottom:1px solid var(--line);background:#FBFAF7;white-space:nowrap}
+th.r,td.r{text-align:right}
+td{padding:7px 10px;border-bottom:1px solid var(--line-2);vertical-align:top}
+tr:last-child td{border-bottom:0}
+tbody tr:hover{background:#FBFAF7}
+td.k{font-family:var(--m);white-space:nowrap}
+tr.thin td{opacity:.45}
+tr.thin:hover{background:transparent}
+.warn{color:var(--warn)}
+.muted{color:var(--ink-3)}
+.empty{padding:40px;text-align:center;color:var(--ink-3);font-size:13px}
+.err{border:1px solid var(--accent);background:#FFF6F3;color:#8A2A12;padding:10px 14px;margin-bottom:12px;font-size:13px;white-space:pre-wrap}
+.bar{display:inline-block;height:7px;background:var(--accent);opacity:.28;vertical-align:middle;margin-right:6px}
+@media (max-width:760px){
+  header h1{display:none}
+  main{padding:12px}
+  th:nth-child(3),td:nth-child(3){display:none}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>竞争格局</h1>
+  <span class="meta" id="meta"></span>
+</header>
+
+<main>
+  <div class="tabs">
+    <button data-x="winner" class="on">中标单位</button>
+    <button data-x="city">城市</button>
+    <button data-x="type">行业</button>
+    <button data-x="buyer">招标人</button>
+  </div>
+
+  <div class="filters">
+    <select id="fCity"><option value="">全部城市</option></select>
+    <select id="fType"><option value="">全部行业</option></select>
+    <span class="hint">发布从</span><input id="fSince" type="date">
+    <span class="hint">到</span><input id="fUntil" type="date">
+    <select id="fN">
+      <option value="1">全部出现</option>
+      <option value="3">≥3 次</option>
+      <option value="5" selected>≥5 次</option>
+      <option value="10">≥10 次</option>
+    </select>
+    <button class="clr" id="fReset">重置</button>
+  </div>
+
+  <div class="kpi" id="kpi"></div>
+  <div id="out"></div>
+</main>
+
+<script src="/nav.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const pct = (x) => (x == null ? '—' : (x * 100).toFixed(1) + '%');
+const money = (x) => (x == null ? '—' : x >= 1e8 ? (x / 1e8).toFixed(2) + ' 亿' : (x / 1e4).toFixed(0) + ' 万');
+const wan = (x) => (x == null ? '—' : (x / 1e4).toFixed(0) + ' 万');
+
+const S = { x: 'winner', city: '', type: '', since: '', until: '', minN: 5 };
+
+async function load() {
+  $('out').innerHTML = '<div class="empty">载入中…</div>';
+  const q = new URLSearchParams({ x: S.x, limit: '2000' });
+  if (S.city) q.set('city', S.city);
+  if (S.type) q.set('type', S.type);
+  if (S.since) q.set('since', S.since);
+  if (S.until) q.set('until', S.until);
+
+  let j;
+  try {
+    j = await (await fetch('/api/market?' + q)).json();
+  } catch (e) {
+    $('out').innerHTML = `<div class="err">${esc(e.message)}</div>`;
+    return;
+  }
+  if (!j.ok) {
+    $('out').innerHTML = `<div class="err">${esc(j.error)}</div>`;
+    return;
+  }
+  fillFacets(j.facets);
+  render(j);
+}
+
+function fillFacets(f) {
+  if (!f) return;
+  if ($('fCity').options.length <= 1) {
+    $('fCity').innerHTML = '<option value="">全部城市</option>' +
+      f.cities.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    $('fCity').value = S.city;
+  }
+  if ($('fType').options.length <= 1) {
+    $('fType').innerHTML = '<option value="">全部行业</option>' +
+      f.types.map((t) => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+    $('fType').value = S.type;
+  }
+}
+
+function render(j) {
+  const rows = j.rows.filter((r) => r.n >= S.minN);
+  const total = j.rows.reduce((a, r) => a + r.n, 0);
+  const withRate = j.rows.filter((r) => r.rateN >= 5);
+  const maxN = Math.max(1, ...rows.map((r) => r.n));
+
+  $('meta').textContent = `事实表 ${j.meta.generatedAt.slice(0, 16).replace('T', ' ')} · ${j.meta.total} 条中标记录`;
+
+  $('kpi').innerHTML = `
+    <div><b>${j.meta.total}</b><span>中标记录总数</span></div>
+    <div><b>${j.meta.filtered}</b><span>当前筛选命中</span></div>
+    <div><b>${j.rows.length}</b><span>${S.x === 'winner' ? '家中标单位' : '个分组'}</span></div>
+    <div><b>${withRate.length}</b><span>下浮率样本 ≥5 的组</span></div>
+    <div><b>${j.meta.source?.ctrl ?? 0}</b><span>控制价记录（配对上限）</span></div>`;
+
+  if (!rows.length) {
+    $('out').innerHTML = `<div class="empty">当前条件下没有 ≥${S.minN} 次的组<br><br>
+      把「全部出现」调出来可以看到长尾</div>`;
+    return;
+  }
+
+  const label = { winner: '中标单位', city: '城市', type: '行业', buyer: '招标人' }[S.x];
+  const showCities = S.x === 'winner' || S.x === 'buyer';
+
+  let h = `<section><h2>${label}排行<em>${rows.length} 组 · 按次数降序</em></h2>
+    <table><thead><tr>
+      <th style="width:36px">#</th><th>${label}</th>
+      <th class="r" style="width:70px">中标次数</th>
+      ${showCities ? '<th class="r" style="width:64px">覆盖城市</th>' : ''}
+      <th class="r" style="width:96px">下浮率中位</th>
+      <th class="r" style="width:64px">样本 n</th>
+      <th class="r" style="width:96px">中标额合计</th>
+    </tr></thead><tbody>`;
+
+  rows.forEach((r, i) => {
+    const thin = r.n < 5 ? ' class="thin"' : '';
+    const rateCell = r.rateMed == null
+      ? '<span class="muted" title="该项目没有可配对的控制价">—</span>'
+      : `${pct(r.rateMed)}${r.rateN < 5 ? ' <span class="warn" title="样本不足 5，仅供参考">?</span>' : ''}`;
+    h += `<tr${thin}>
+      <td class="muted">${i + 1}</td>
+      <td><span class="bar" style="width:${Math.round(r.n / maxN * 60)}px"></span>${esc(r.key || '(空)')}</td>
+      <td class="r k">${r.n}</td>
+      ${showCities ? `<td class="r k" title="${esc((r.cityList || []).join('、'))}">${r.cities}</td>` : ''}
+      <td class="r k">${rateCell}</td>
+      <td class="r k ${r.rateN === 0 ? 'muted' : ''}">${r.rateN}</td>
+      <td class="r k">${money(r.winSum)}</td>
+    </tr>`;
+  });
+  h += '</tbody></table>';
+
+  if (withRate.length < 5) {
+    h += `<div style="padding:10px 14px;font-size:12px;color:var(--warn);border-top:1px solid var(--line-2)">
+      只有 ${withRate.length} 个分组有 ≥5 个下浮率样本 —— 控制价数据集中在少数城市，
+      阜阳/滁州/淮南/安庆/六安的招标文件没下载到，这些城市的下浮率无法计算。</div>`;
+  }
+  h += '</section>';
+  $('out').innerHTML = h;
+}
+
+document.querySelectorAll('.tabs button').forEach((b) => {
+  b.onclick = () => {
+    document.querySelectorAll('.tabs button').forEach((x) => x.classList.remove('on'));
+    b.classList.add('on');
+    S.x = b.dataset.x;
+    load();
+  };
+});
+$('fCity').onchange = () => { S.city = $('fCity').value; load(); };
+$('fType').onchange = () => { S.type = $('fType').value; load(); };
+$('fSince').onchange = () => { S.since = $('fSince').value; load(); };
+$('fUntil').onchange = () => { S.until = $('fUntil').value; load(); };
+$('fN').onchange = () => { S.minN = Number($('fN').value); load(); };
+$('fReset').onclick = () => {
+  S.city = ''; S.type = ''; S.since = ''; S.until = ''; S.minN = 5;
+  $('fCity').value = ''; $('fType').value = ''; $('fSince').value = ''; $('fUntil').value = ''; $('fN').value = '5';
+  load();
+};
+
+load();
+</script>
+</body>
+</html>

@@ -655,6 +655,111 @@ def zip_attachments(guid: str):
     return tmp, None
 
 
+_FACTS_CACHE: dict = {}
+
+
+def load_facts() -> dict | None:
+    """读事实表（TS 生成的 data/agg/facts.json）。
+
+    为什么在 TS 生成：中标公告（nature=2）与招标公告（nature=1）guid 完全不同，
+    连不上；唯一能连的是归一化标题，而 normalizeTitle 是 TS 函数 ——
+    在 Python 复刻就是第二套口径。
+    """
+    p = os.path.join(PROJ, "data", "agg", "facts.json")
+    if not os.path.exists(p):
+        return None
+    m = os.path.getmtime(p)
+    hit = _FACTS_CACHE.get("hit")
+    if hit and hit[0] == m:
+        return hit[1]
+    with open(p, encoding="utf-8") as f:
+        d = json.load(f)
+    _FACTS_CACHE["hit"] = (m, d)
+    return d
+
+
+MARKET_KEYS = {"winner": "winner", "city": "city", "type": "type", "buyer": "buyer"}
+
+
+def market(x: str = "winner", n: int = 1, city: str = "", ptype: str = "",
+           since: str = "", until: str = "", limit: int = 500) -> dict:
+    """事实表透视。n<5 的组照样返回，但带 n 让前端灰显 —— 不能悄悄丢掉。"""
+    d = load_facts()
+    if not d:
+        return {"ok": False, "error": "事实表不存在，请先跑 node --no-warnings src/agg-build.ts"}
+    key = MARKET_KEYS.get(x)
+    if not key:
+        return {"ok": False, "error": f"x 只支持 {list(MARKET_KEYS)}"}
+
+    facts = d["facts"]
+    src = facts
+    if city:
+        src = [f for f in src if (f.get("city") or "") == city]
+    if ptype:
+        src = [f for f in src if (f.get("type") or "") == ptype]
+    if since:
+        src = [f for f in src if (f.get("pubDate") or "") >= since]
+    if until:
+        src = [f for f in src if (f.get("pubDate") or "") <= until]
+
+    import statistics
+
+    agg: dict = {}
+    for f in src:
+        k = f.get(key)
+        if not k:
+            continue
+        a = agg.get(k)
+        if a is None:
+            a = {"key": k, "n": 0, "cities": set(), "rates": [], "winSum": 0.0, "rates5": []}
+            agg[k] = a
+        a["n"] += 1
+        if f.get("city"):
+            a["cities"].add(f["city"])
+        if f.get("rate") is not None:
+            a["rates"].append(f["rate"])
+        if f.get("winPrice"):
+            a["winSum"] += f["winPrice"]
+
+    rows = []
+    for a in agg.values():
+        rates = sorted(a["rates"])
+        rows.append({
+            "key": a["key"],
+            "n": a["n"],
+            "cities": len(a["cities"]),
+            "cityList": sorted(a["cities"])[:8],
+            "rateN": len(rates),
+            "rateMed": round(statistics.median(rates), 4) if rates else None,
+            "rateP25": round(rates[int(len(rates) * 0.25)], 4) if len(rates) >= 5 else None,
+            "rateP75": round(rates[min(len(rates) - 1, int(len(rates) * 0.75))], 4) if len(rates) >= 5 else None,
+            "winSum": a["winSum"] or None,
+        })
+
+    # 默认按次数降序 —— 不按下浮率排，否则 1 次中标的小样本会排到最前
+    rows.sort(key=lambda r: (-r["n"], r["key"]))
+
+    # 筛选项（前端下拉用）
+    facets = {
+        "cities": sorted({f["city"] for f in facts if f.get("city")}),
+        "types": sorted({f["type"] for f in facts if f.get("type")}),
+    }
+
+    return {
+        "ok": True,
+        "meta": {
+            "generatedAt": d.get("generatedAt"),
+            "x": x,
+            "total": len(facts),
+            "filtered": len(src),
+            "groups": len(rows),
+            "source": d.get("source"),
+        },
+        "facets": facets,
+        "rows": rows[: max(1, min(2000, limit))],
+    }
+
+
 def get_check_text(fn: str) -> dict:
     """取出这次检查时的标书原文（按行），用于点证据行号定位。"""
     if not fn or "/" in fn or "\\" in fn or not fn.endswith(".json"):
@@ -742,6 +847,16 @@ class H(BaseHTTPRequestHandler):
                 return self._send(digest_json(int(one("days", "2"))))
             if p == "/api/price-ref":
                 return self._send(price_ref(one("g", "")))
+            if p == "/api/market":
+                return self._send(market(
+                    x=one("x", "winner"),
+                    n=int(one("n", "1")),
+                    city=one("city", ""),
+                    ptype=one("type", ""),
+                    since=one("since", ""),
+                    until=one("until", ""),
+                    limit=int(one("limit", "500")),
+                ))
             if p == "/api/attachments/zip":
                 g0 = one("g", "")
                 path, err = zip_attachments(g0)
