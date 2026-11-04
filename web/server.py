@@ -705,8 +705,15 @@ MARKET_KEYS = {"winner": "winner", "city": "city", "type": "type", "buyer": "buy
 
 
 def market(x: str = "winner", n: int = 1, city: str = "", ptype: str = "",
-           since: str = "", until: str = "", limit: int = 500) -> dict:
-    """事实表透视。n<5 的组照样返回，但带 n 让前端灰显 —— 不能悄悄丢掉。"""
+           since: str = "", until: str = "", limit: int = 500,
+           seg: str = "", city_other: int = 0) -> dict:
+    """事实表透视。n<5 的组照样返回，但带 n 让前端灰显 —— 不能悄悄丢掉。
+
+    seg / city_other 是给矩阵下钻用的（默认空 = 老行为不变，_market_test.py 的 5 条断言不受影响）：
+    - seg：按 segment 过滤（矩阵按 segment 算，下钻也必须按 segment 过滤，
+      否则「市政 798」点进去只看到 441 条 —— 那是两套口径）
+    - city_other：city 为空的记录（矩阵里那行叫「其他」）
+    """
     d = load_facts()
     if not d:
         return {"ok": False, "error": "事实表不存在，请先跑 node --no-warnings src/agg-build.ts"}
@@ -718,8 +725,12 @@ def market(x: str = "winner", n: int = 1, city: str = "", ptype: str = "",
     src = facts
     if city:
         src = [f for f in src if (f.get("city") or "") == city]
+    if city_other:
+        src = [f for f in src if not f.get("city")]
     if ptype:
         src = [f for f in src if (f.get("type") or "") == ptype]
+    if seg:
+        src = [f for f in src if (f.get("segment") or f.get("type") or "") == seg]
     if since:
         src = [f for f in src if (f.get("pubDate") or "") >= since]
     if until:
@@ -909,6 +920,136 @@ def market_grid(since: str = "", until: str = "", x: str = "type") -> dict:
     }
 
 
+def market_cell(city: str = "", seg: str = "", city_other: int = 0,
+                since: str = "", until: str = "", ptype: str = "") -> dict:
+    """L2 格子详情：一次返回 4 块（摘要 / Top20 / 下浮率分布 / 月度趋势）。
+
+    为什么一次返回而不是三次请求：最大格的完整块约 1.2KB，
+    拆三次 = 3×RTT + 3×重新扫 3,572 行，收益为负。
+    聚合用**格内全量**，只有明细 rows 截到 200 —— 否则 235 条的格只看 200 条算中位会静默错数。
+    """
+    d = load_facts()
+    if not d:
+        return {"ok": False, "error": "事实表不存在"}
+    facts = d["facts"]
+    src = facts
+    if city:
+        src = [f for f in src if (f.get("city") or "") == city]
+    if city_other:
+        src = [f for f in src if not f.get("city")]
+    if seg:
+        src = [f for f in src if (f.get("segment") or f.get("type") or "") == seg]
+    if ptype:
+        src = [f for f in src if (f.get("type") or "") == ptype]
+    if since:
+        src = [f for f in src if (f.get("pubDate") or "") >= since]
+    if until:
+        src = [f for f in src if (f.get("pubDate") or "") <= until]
+
+    import statistics
+
+    # 摘要
+    win = {}
+    for f in src:
+        w = f.get("winner")
+        if w:
+            win[w] = win.get(w, 0) + 1
+    rates = [f["rate"] for f in src if f.get("rate") is not None]
+    topN = max(win.values()) if win else 0
+    brief = {
+        "n": len(src),
+        "winners": len(win),
+        "topShare": round(topN / len(src), 4) if src else None,
+        "rateN": len(rates),
+        "rateMed": round(statistics.median(rates), 4) if rates else None,
+    }
+
+    # Top20（含每家的下浮率中位）
+    top = []
+    for w, n in sorted(win.items(), key=lambda x: -x[1])[:20]:
+        rs = sorted(f["rate"] for f in src if f.get("winner") == w and f.get("rate") is not None)
+        top.append({
+            "key": w, "n": n, "rateN": len(rs),
+            "rateMed": round(statistics.median(rs), 4) if rs else None,
+        })
+
+    # 下浮率 10 桶（0-5%, 5-10%, ... 45%+）
+    hist = [0] * 10
+    for r in rates:
+        b = min(9, max(0, int(r * 100 // 5)))
+        hist[b] += 1
+
+    # 月度
+    mons = {}
+    for f in src:
+        m = (f.get("pubDate") or "")[:7]
+        if m:
+            mons[m] = mons.get(m, 0) + 1
+    months = [{"m": k, "n": v} for k, v in sorted(mons.items())]
+
+    # 明细（截 200）
+    rows = [{
+        "guid": f["guid"], "title": f["title"], "winner": f.get("winner"),
+        "pubDate": f.get("pubDate"), "winPrice": f.get("winPrice"),
+        "ctrl": f.get("ctrl"), "rate": f.get("rate"),
+    } for f in sorted(src, key=lambda x: (x.get("pubDate") or ""), reverse=True)[:200]]
+
+    return {
+        "ok": True,
+        "meta": {"total": len(facts), "filtered": len(src)},
+        "brief": brief,
+        "top": top,
+        "hist": hist,
+        "months": months,
+        "rows": rows,
+        "truncated": max(0, len(src) - 200),
+    }
+
+
+def company_profile(w: str = "") -> dict:
+    """L3 公司画像：中标曲线 / 活动半径 / 报价习惯 / 明细。
+
+    **必须返回 rateN**：最大那家公司 31 单里只有 1 单能配对下浮率，
+    前端若直接画"报价习惯 14.2%"，就是用一个样本冒充 31 单的行为特征。
+    """
+    d = load_facts()
+    if not d:
+        return {"ok": False, "error": "事实表不存在"}
+    if not w:
+        return {"ok": False, "error": "缺少 w（公司名）"}
+    mine = [f for f in d["facts"] if f.get("winner") == w]
+    if not mine:
+        return {"ok": False, "error": f"没有「{w}」的中标记录（名字必须完全一致）"}
+
+    import statistics
+
+    rates = [f["rate"] for f in mine if f.get("rate") is not None]
+    mons, cities = {}, {}
+    for f in mine:
+        m = (f.get("pubDate") or "")[:7]
+        if m:
+            mons[m] = mons.get(m, 0) + 1
+        c = f.get("city") or "其他"
+        cities[c] = cities.get(c, 0) + 1
+
+    return {
+        "ok": True,
+        "name": w,
+        "n": len(mine),
+        "winSum": sum(f["winPrice"] for f in mine if f.get("winPrice")) or None,
+        "cities": len(cities),
+        "rateN": len(rates),
+        "rateMed": round(statistics.median(rates), 4) if rates else None,
+        "curve": [{"m": k, "n": v} for k, v in sorted(mons.items())],
+        "cityDist": [{"c": k, "n": v} for k, v in sorted(cities.items(), key=lambda x: -x[1])],
+        "rows": [{
+            "guid": f["guid"], "title": f["title"], "pubDate": f.get("pubDate"),
+            "city": f.get("city"), "winPrice": f.get("winPrice"),
+            "ctrl": f.get("ctrl"), "rate": f.get("rate"),
+        } for f in sorted(mine, key=lambda x: (x.get("pubDate") or ""), reverse=True)[:30]],
+    }
+
+
 def get_check_text(fn: str) -> dict:
     """取出这次检查时的标书原文（按行），用于点证据行号定位。"""
     if not fn or "/" in fn or "\\" in fn or not fn.endswith(".json"):
@@ -1005,6 +1146,8 @@ class H(BaseHTTPRequestHandler):
                     since=one("since", ""),
                     until=one("until", ""),
                     limit=int(one("limit", "500")),
+                    seg=one("seg", ""),
+                    city_other=int(one("city_other", "0")),
                 ))
             if p == "/api/my-bids":
                 return self._send(my_bids_list())
@@ -1014,6 +1157,17 @@ class H(BaseHTTPRequestHandler):
                     until=one("until", ""),
                     x=one("x", "type"),
                 ))
+            if p == "/api/market-cell":
+                return self._send(market_cell(
+                    city=one("city", ""),
+                    seg=one("seg", ""),
+                    city_other=int(one("city_other", "0")),
+                    since=one("since", ""),
+                    until=one("until", ""),
+                    ptype=one("type", ""),
+                ))
+            if p == "/api/company":
+                return self._send(company_profile(one("w", "")))
             if p == "/api/attachments/zip":
                 g0 = one("g", "")
                 path, err = zip_attachments(g0)

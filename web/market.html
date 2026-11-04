@@ -93,6 +93,17 @@ tr.thin:hover{background:transparent}
   <div id="out"></div>
 </main>
 
+<!-- L3 公司画像：侧滑 480px，不跳页 -->
+<div id="dw" style="display:none;position:fixed;inset:0;z-index:200">
+  <div onclick="closeCompany()" style="position:absolute;inset:0;background:rgba(0,0,0,.28)"></div>
+  <div style="position:absolute;right:0;top:0;bottom:0;width:480px;max-width:92vw;background:#fff;
+       box-shadow:-6px 0 22px rgba(0,0,0,.12);overflow:auto;padding:16px 18px">
+    <button onclick="closeCompany()"
+      style="float:right;border:0;background:transparent;font:20px/1 var(--m);cursor:pointer;color:#6E675E">×</button>
+    <div id="dwBody"></div>
+  </div>
+</div>
+
 <script src="/nav.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
@@ -101,7 +112,7 @@ const pct = (x) => (x == null ? '—' : (x * 100).toFixed(1) + '%');
 const money = (x) => (x == null ? '—' : x >= 1e8 ? (x / 1e8).toFixed(2) + ' 亿' : (x / 1e4).toFixed(0) + ' 万');
 const wan = (x) => (x == null ? '—' : (x / 1e4).toFixed(0) + ' 万');
 
-const S = { x: 'grid', city: '', type: '', since: '', until: '', minN: 5 };
+const S = { x: 'grid', city: '', type: '', seg: '', cityOther: 0, since: '', until: '', minN: 5 };
 
 // ---------- L1 矩阵 ----------
 // 底色编码「样本量」而不是下浮率：实测 106 格里 71 格没有下浮率，
@@ -175,19 +186,146 @@ function renderMatrix(j) {
   $('out').innerHTML = h;
 }
 
-// 点格子 → 切到「中标单位」tab 并带上筛选（L2 的降级形态，先让它立刻可用）
-function pickCell(city, type) {
-  S.city = city === '其他' ? '' : city;
-  S.type = type;
-  $('fCity').innerHTML = `<option value="">全部城市</option><option value="${esc(S.city)}">${esc(S.city)}</option>`;
-  $('fCity').value = S.city;
-  $('fType').innerHTML = `<option value="">全部行业</option><option value="${esc(type)}">${esc(type)}</option>`;
-  $('fType').value = type;
-  document.querySelectorAll('.tabs button').forEach((x) => x.classList.remove('on'));
-  document.querySelector('.tabs button[data-x="winner"]').classList.add('on');
-  S.x = 'winner';
-  load();
+// 点格子 → L2 格子详情（不再切 tab：那会丢掉格首的分散度摘要）
+async function pickCell(city, seg) {
+  S.cell = { city, seg };
+  $('out').innerHTML = '<div class="empty">载入中…</div>';
+  const q = new URLSearchParams();
+  if (city !== '其他') q.set('city', city); else q.set('city_other', '1');
+  q.set('seg', seg);
+  if (S.since) q.set('since', S.since);
+  if (S.until) q.set('until', S.until);
+  let j;
+  try {
+    j = await (await fetch('/api/market-cell?' + q)).json();
+  } catch (e) {
+    $('out').innerHTML = `<div class="err">${esc(e.message)}</div>`;
+    return;
+  }
+  if (!j.ok) { $('out').innerHTML = `<div class="err">${esc(j.error)}</div>`; return; }
+  renderCell(j, city, seg);
 }
+
+function renderCell(j, city, seg) {
+  const b = j.brief;
+  const maxTop = Math.max(1, ...j.top.map((x) => x.n));
+  const maxMon = Math.max(1, ...j.months.map((x) => x.n));
+  const maxHist = Math.max(1, ...j.hist);
+
+  let h = `<div style="margin-bottom:10px">
+    <button class="btn-x" onclick="loadGrid()">← 返回矩阵</button>
+    <span style="margin-left:10px;font-weight:600">${esc(city)} › ${esc(seg)}</span>
+  </div>`;
+
+  // 格首摘要：三个数字直接回答"这个市场什么样"
+  h += `<section><h2>这个格子<em>${b.n} 条</em></h2><div class="body">
+    <div class="kpi" style="margin:0;border:0">
+      <div><b>${b.n}</b><span>中标记录</span></div>
+      <div><b>${b.winners}</b><span>参与单位</span></div>
+      <div><b>${b.topShare == null ? '—' : (b.topShare * 100).toFixed(1) + '%'}</b><span>首名占比</span></div>
+      <div><b>${b.rateN}</b><span>可配对下浮率</span></div>
+    </div>
+    <div style="padding:9px 14px;font-size:12px;color:${b.topShare != null && b.topShare < 0.05 ? 'var(--warn)' : 'var(--ink-3)'}">
+      ${b.topShare != null && b.topShare < 0.05
+        ? `极度分散：${b.winners} 家单位分 ${b.n} 单，首名只占 ${(b.topShare * 100).toFixed(1)}% —— 这个市场没有霸主`
+        : `首名占 ${(b.topShare * 100).toFixed(1)}%，有一定集中度`}
+    </div>
+  </div></section>`;
+
+  // Top20 + 直方图
+  h += `<section><h2>中标单位 Top${j.top.length}<em>点公司看画像</em></h2>
+    <table><thead><tr><th style="width:32px">#</th><th>单位</th>
+      <th class="r" style="width:64px">中标</th><th class="r" style="width:80px">下浮中位</th>
+      <th class="r" style="width:56px">样本</th></tr></thead><tbody>`;
+  j.top.forEach((x, i) => {
+    const rateCell = x.rateMed == null
+      ? '<span class="muted">—</span>'
+      : `${(x.rateMed * 100).toFixed(1)}%${x.rateN < 5 ? ' <span class="warn">?</span>' : ''}`;
+    h += `<tr onclick="openCompany('${esc(x.key).replace(/'/g, "\\'")}')" style="cursor:pointer">
+      <td class="muted">${i + 1}</td>
+      <td><span class="bar" style="width:${Math.round(x.n / maxTop * 50)}px"></span>${esc(x.key)}</td>
+      <td class="r k">${x.n}</td>
+      <td class="r k">${rateCell}</td>
+      <td class="r k">${x.rateN}</td></tr>`;
+  });
+  h += '</tbody></table></section>';
+
+  h += `<section><h2>下浮率分布<em>${b.rateN} 个样本</em></h2><div class="body">`;
+  if (b.rateN < 5) {
+    h += `<span class="muted">样本不足 5 个（${b.rateN}），不做分布结论。
+      控制价数据集中在少数城市，这个格子的招标文件多半没下载到。</span>`;
+  } else {
+    h += j.hist.map((n, i) => `<div style="display:flex;align-items:center;gap:8px;margin:2px 0">
+      <span style="width:64px;font:11px var(--m);color:var(--ink-3)">${i * 5}-${i * 5 + 5}%</span>
+      <span class="bar" style="width:${Math.round(n / maxHist * 240)}px;height:12px"></span>
+      <span class="k" style="font-size:11.5px">${n}</span></div>`).join('');
+  }
+  h += '</div></section>';
+
+  // 月度趋势
+  if (j.months.length > 1) {
+    h += `<section><h2>月度趋势<em>${j.months.length} 个月</em></h2><div class="body">`;
+    h += j.months.map((m) => `<div style="display:flex;align-items:center;gap:8px;margin:2px 0">
+      <span style="width:64px;font:11px var(--m);color:var(--ink-3)">${m.m}</span>
+      <span class="bar" style="width:${Math.round(m.n / maxMon * 240)}px;height:12px"></span>
+      <span class="k" style="font-size:11.5px">${m.n}</span></div>`).join('');
+    h += '</div></section>';
+  }
+
+  $('out').innerHTML = h;
+}
+
+// L3 公司画像（侧滑，不跳页 —— 看对手是连续动作，跳页会打断）
+async function openCompany(w) {
+  const box = $('dw');
+  box.style.display = 'block';
+  $('dwBody').innerHTML = '<div class="empty">载入中…</div>';
+  let j;
+  try {
+    j = await (await fetch('/api/company?w=' + encodeURIComponent(w))).json();
+  } catch (e) {
+    $('dwBody').innerHTML = `<div class="err">${esc(e.message)}</div>`;
+    return;
+  }
+  if (!j.ok) { $('dwBody').innerHTML = `<div class="err">${esc(j.error)}</div>`; return; }
+
+  const maxMon = Math.max(1, ...j.curve.map((x) => x.n));
+  const maxCity = Math.max(1, ...j.cityDist.map((x) => x.n));
+
+  let h = `<div style="font-weight:600;font-size:15px;margin-bottom:4px">${esc(j.name)}</div>
+    <div class="muted" style="font-size:12.5px;margin-bottom:14px">
+      中标 ${j.n} 次 · 覆盖 ${j.cities} 城 · 累计 ${j.winSum ? (j.winSum / 1e8).toFixed(2) + ' 亿' : '—'}
+    </div>`;
+
+  h += `<div style="font:600 12px var(--m);color:var(--ink-3);margin:14px 0 6px">中标曲线</div>`;
+  h += j.curve.map((m) => `<div style="display:flex;align-items:center;gap:8px">
+    <span style="width:58px;font:11px var(--m);color:var(--ink-3)">${m.m}</span>
+    <span class="bar" style="width:${Math.round(m.n / maxMon * 200)}px;height:11px"></span>
+    <span class="k" style="font-size:11px">${m.n}</span></div>`).join('');
+
+  h += `<div style="font:600 12px var(--m);color:var(--ink-3);margin:16px 0 6px">活动半径</div>`;
+  h += j.cityDist.slice(0, 8).map((m) => `<div style="display:flex;align-items:center;gap:8px">
+    <span style="width:58px;font:11px var(--m);color:var(--ink-3)">${esc(m.c)}</span>
+    <span class="bar" style="width:${Math.round(m.n / maxCity * 200)}px;height:11px"></span>
+    <span class="k" style="font-size:11px">${m.n}</span></div>`).join('');
+
+  h += `<div style="font:600 12px var(--m);color:var(--ink-3);margin:16px 0 6px">报价习惯</div>`;
+  if (j.rateN < 5) {
+    h += `<div class="warn" style="font-size:12px">⚠ ${j.n} 单里只有 ${j.rateN} 单能配对下浮率，样本不足，不下结论</div>`;
+  } else {
+    h += `<div style="font-size:13px">下浮率中位 <b>${(j.rateMed * 100).toFixed(1)}%</b>（${j.rateN} 个样本）</div>`;
+  }
+
+  h += `<div style="font:600 12px var(--m);color:var(--ink-3);margin:16px 0 6px">项目明细（最近 ${j.rows.length} 条）</div>`;
+  h += j.rows.map((r) => `<div style="padding:5px 0;border-bottom:1px solid var(--line-2);font-size:12.5px">
+    <a href="/project?g=${encodeURIComponent(r.guid)}" style="color:var(--ink);text-decoration:none">${esc(r.title.slice(0, 34))}</a>
+    <div class="muted" style="font:11px var(--m)">${esc(r.city || '')} · ${esc(r.pubDate || '')}${r.rate != null ? ' · 下浮 ' + (r.rate * 100).toFixed(1) + '%' : ''}</div>
+  </div>`).join('');
+
+  $('dwBody').innerHTML = h;
+}
+
+function closeCompany() { $('dw').style.display = 'none'; }
 
 async function load() {
   $('fCity').style.display = '';
@@ -196,7 +334,9 @@ async function load() {
   $('out').innerHTML = '<div class="empty">载入中…</div>';
   const q = new URLSearchParams({ x: S.x, limit: '2000' });
   if (S.city) q.set('city', S.city);
+  if (S.cityOther) q.set('city_other', '1');
   if (S.type) q.set('type', S.type);
+  if (S.seg) q.set('seg', S.seg);
   if (S.since) q.set('since', S.since);
   if (S.until) q.set('until', S.until);
 
@@ -300,13 +440,19 @@ document.querySelectorAll('.tabs button').forEach((b) => {
 });
 // 矩阵 tab 下改日期/重置必须走 loadGrid，否则会请求 /api/market?x=grid 直接报错
 const refresh = () => (S.x === 'grid' ? loadGrid() : load());
-$('fCity').onchange = () => { S.city = $('fCity').value; refresh(); };
-$('fType').onchange = () => { S.type = $('fType').value; refresh(); };
+$('fCity').onchange = () => {
+  const v = $('fCity').value;
+  S.cityOther = v === '__other' ? 1 : 0;
+  S.city = v === '__other' ? '' : v;
+  refresh();
+};
+// 行业下拉在矩阵下钻后装的是 segment 值，所以写 S.seg 而不是 S.type
+$('fType').onchange = () => { S.seg = $('fType').value; S.type = ''; refresh(); };
 $('fSince').onchange = () => { S.since = $('fSince').value; refresh(); };
 $('fUntil').onchange = () => { S.until = $('fUntil').value; refresh(); };
 $('fN').onchange = () => { S.minN = Number($('fN').value); refresh(); };
 $('fReset').onclick = () => {
-  S.city = ''; S.type = ''; S.since = ''; S.until = ''; S.minN = 5;
+  S.city = ''; S.type = ''; S.seg = ''; S.cityOther = 0; S.since = ''; S.until = ''; S.minN = 5;
   $('fCity').value = ''; $('fType').value = ''; $('fSince').value = ''; $('fUntil').value = ''; $('fN').value = '5';
   refresh();
 };
