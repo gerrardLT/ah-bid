@@ -216,6 +216,16 @@ function buildFilters() {
   $('fCity').innerHTML = '<option value="">全部城市</option>' + [...cities.entries()]
     .sort((a, b) => b[1] - a[1])
     .map(([c, n]) => `<option value="${esc(c)}">${esc(c)}（${n}）</option>`).join('');
+
+  // 关键：innerHTML 重建会把 select 的选中项清空，必须把状态写回去。
+  // 不写回去就会出现「切换时间窗后下拉显示『全部类型』、列表却还是筛过的」——
+  // 用户看到的现象就是「分类筛选没作用」。
+  // 另外，旧选择在新窗口里可能不存在（比如「近 2 天」没有储能项目），
+  // 这时要重置状态，否则会筛出 0 条却仍显示「全部类型」。
+  if (S.tag && !tags.has(S.tag)) S.tag = '';
+  if (S.city && !cities.has(S.city)) S.city = '';
+  $('fTag').value = S.tag;
+  $('fCity').value = S.city;
   const pct = d.items.length ? ((withAmount / d.items.length) * 100).toFixed(1) : '0.0';
   $('cov').textContent = `已知限价 ${withAmount}/${d.items.length}（${pct}%）`;
 }
