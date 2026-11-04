@@ -76,6 +76,12 @@ node --no-warnings src\extract-clauses.ts 2>&1 |
 # 推送渠道读 data/notify.config.json，没配就只写 output/digest.md，不报错。
 node --no-warnings src\daily-digest.ts --days=2 --send 2>&1 |
     Out-File -Append -Encoding utf8 data\crawl.log
+
+# 事实表重建：竞争格局矩阵（/market.html）读的就是 data\agg\facts.json。
+# 放在日报之后：它失败不影响推送；放在日报之前则会拖慢 06:00 的推送时间。
+# 不加 --dry，直接覆盖；agg-build 内部有「行业分类合计 = 行数」的断言，不一致会非零退出。
+node --no-warnings src\agg-build.ts 2>&1 |
+    Out-File -Append -Encoding utf8 data\crawl.log
 $digestCode = $LASTEXITCODE
 if ($digestCode -ne 0) { "日报生成/推送失败 exit=$digestCode" | Out-File -Append -Encoding utf8 data\crawl.err }
 

@@ -97,6 +97,35 @@ rows.push([
   true,
 ]);
 
+// ---- 5. 业绩抽取（分布型断言）----
+// 为什么用分布而不是单条用例：8 条手写用例下，两个 P0（人员业绩判反、
+// cnt 被「6个月」「2.10项目」污染）**全部通过**。只有全库分布能抓到它们。
+// 表可能还没建（extract-clauses 才创建），建之前跳过而不是报错。
+try {
+  const p = db
+    .prepare(
+      `SELECT
+         (SELECT COUNT(*) FROM announcement_perf) AS total,
+         (SELECT COUNT(*) FROM announcement_perf WHERE notice='无门槛' AND min_amount IS NOT NULL) AS noReqAmount,
+         (SELECT COUNT(*) FROM announcement_perf WHERE cnt >= 5) AS cntBig,
+         (SELECT COUNT(*) FROM announcement_perf WHERE notice='见招标文件') AS defer`,
+    )
+    .get() as { total: number; noReqAmount: number; cntBig: number; defer: number };
+  check(
+    '业绩：无门槛却有金额',
+    `${p.noReqAmount} 条（应恒为 0 —— 判反了）`,
+    p.noReqAmount === 0,
+  );
+  check(
+    '业绩：cnt>=5 噪声',
+    `${p.cntBig} 条（应 < 20；被「6个月」「2.10项目」污染时会冲到 200+）`,
+    p.cntBig < 20,
+  );
+  rows.push(['业绩抽取', `已扫 ${p.total}｜无门槛｜见招标文件 ${p.defer}`, true]);
+} catch {
+  rows.push(['业绩抽取', 'announcement_perf 尚未创建（跑 extract-clauses）', true]);
+}
+
 // ---- 输出 ----
 console.log('=== 数据质量闸门 ===\n');
 for (const [label, value, ok] of rows) {
