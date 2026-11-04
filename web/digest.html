@@ -454,5 +454,6 @@ const init = Number(new URLSearchParams(location.search).get('days') || 2);
 document.querySelectorAll('.tabs button[data-d]').forEach((b) => b.classList.toggle('on', Number(b.dataset.d) === init));
 load(init);
 </script>
+<script src="/nav.js"></script>
 </body>
 </html>
