@@ -23,8 +23,11 @@ $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
 "=== $stamp 开始增量抓取 since=$since days=$Days ===" | Out-File -Append -Encoding utf8 data\crawl.log
 
 # natures: 1=招标公告 2=中标候选人 3=中标结果。三类都要，否则细则项目查不到公告
-node --no-warnings src\crawl.ts --natures=1,2,3 --since=$since --reset=all `
-    >> data\crawl.log 2>> data\crawl.err
+# 注意重定向方式：PowerShell 的 `>>` 默认写 UTF-16LE，和上面 Out-File 的 UTF-8 混在
+# 同一个文件里会变成乱码（实测 2026-11-04 那次日志前 30 行读不出来）。
+# 统一用 `2>&1 | Out-File -Append -Encoding utf8`，代价是失去实时输出，定时任务可接受。
+node --no-warnings src\crawl.ts --natures=1,2,3 --since=$since --reset=all 2>&1 |
+    Out-File -Append -Encoding utf8 data\crawl.log
 
 $code = $LASTEXITCODE
 
@@ -44,8 +47,8 @@ if (Test-Path $attachDir) {
 if ($sizeGB -lt $limitGB) {
     "--- 附件阶段开始（当前 ${sizeGB} GB / 上限 ${limitGB} GB）---" |
         Out-File -Append -Encoding utf8 data\crawl.log
-    node --no-warnings src\attach.ts --nature=1 --recent-days=2 --only-missing --limit=200 `
-        >> data\crawl.log 2>> data\crawl.err
+    node --no-warnings src\attach.ts --nature=1 --recent-days=2 --only-missing --limit=200 2>&1 |
+        Out-File -Append -Encoding utf8 data\crawl.log
     "--- 附件阶段结束 exit=$LASTEXITCODE ---" | Out-File -Append -Encoding utf8 data\crawl.log
 } else {
     "!!! 附件目录已达 ${sizeGB} GB，超过上限 ${limitGB} GB，本次跳过下载 !!!" |
@@ -55,7 +58,8 @@ if ($sizeGB -lt $limitGB) {
 # 抓完立刻出日报并推送。
 # --days=2 而不是 1：跨天边界（凌晨跑时"昨天"的公告也要覆盖）。
 # 推送渠道读 data/notify.config.json，没配就只写 output/digest.md，不报错。
-node --no-warnings src\daily-digest.ts --days=2 --send >> data\crawl.log 2>> data\crawl.err
+node --no-warnings src\daily-digest.ts --days=2 --send 2>&1 |
+    Out-File -Append -Encoding utf8 data\crawl.log
 $digestCode = $LASTEXITCODE
 if ($digestCode -ne 0) { "日报生成/推送失败 exit=$digestCode" | Out-File -Append -Encoding utf8 data\crawl.err }
 
