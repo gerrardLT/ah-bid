@@ -45,7 +45,24 @@ th.r,td.r{text-align:right}
 td{padding:7px 10px;border-bottom:1px solid var(--line-2);vertical-align:top}
 tr:last-child td{border-bottom:0}
 tbody tr:hover{background:#FBFAF7}
-td.k{font-family:var(--m);white-space:nowrap}
+td.k{font-family:var(--m);font-variant-numeric:tabular-nums;white-space:nowrap}
+/* 矩阵专用：15 行 × 9 列。行高必须**统一**——
+   有下浮率小字的格原本高出 12px（35.5 vs 47.8），参差比"矮"更难看。
+   3px padding + 小字 line-height 1.15 → 6 + 21.45 + 12.1 ≈ 39.6px，两种格等高。 */
+.mx th{height:40px;padding:0 10px}
+.mx td{height:40px;padding:3px 10px}
+.mx td.k div{line-height:1.15}
+/* L2 用到 .body 但之前没定义（直方图/趋势贴着 section 边框），沿用 project 的口径 */
+.body{padding:12px 14px}
+.btn-x{padding:6px 12px;border:1px solid var(--line);background:var(--panel);font:12.5px var(--f);cursor:pointer;color:var(--ink-2)}
+.btn-x:hover{border-color:var(--accent);color:var(--accent)}
+/* chips：方角，跟 4 个面板页的 paper 语言一致（buyers 的圆角药丸是另一套） */
+.chips{display:flex;gap:4px;flex-wrap:wrap}
+.chip{padding:5px 11px;border:1px solid var(--line);background:#fff;font:12.5px var(--f);cursor:pointer;color:var(--ink-2)}
+.chip:hover{border-color:var(--accent)}
+.chip.on{border-color:var(--accent);color:var(--accent);font-weight:600}
+/* 矩阵合计列的比例条：用背景渐变，不占列宽（64px 放不下 40px 的 bar） */
+.mx td.sum{background-image:linear-gradient(90deg,rgba(200,55,26,.16) 0 var(--p),transparent var(--p))}
 tr.thin td{opacity:.45}
 tr.thin:hover{background:transparent}
 .warn{color:var(--warn)}
@@ -80,12 +97,15 @@ tr.thin:hover{background:transparent}
     <select id="fType"><option value="">全部行业</option></select>
     <span class="hint">发布从</span><input id="fSince" type="date">
     <span class="hint">到</span><input id="fUntil" type="date">
-    <select id="fN">
+    <select id="fN" hidden>
       <option value="1">全部出现</option>
       <option value="3">≥3 次</option>
       <option value="5" selected>≥5 次</option>
       <option value="10">≥10 次</option>
     </select>
+    <!-- chips 只是「回显 + 快选」，真正的状态源仍是上面那个隐藏的 select —— 
+         它的 onchange/fReset 一行不用改，chips 只负责写 value 再 dispatchEvent -->
+    <div class="chips" id="chipN"></div>
     <button class="clr" id="fReset">重置</button>
   </div>
 
@@ -140,6 +160,7 @@ async function loadGrid() {
 
 function renderMatrix(j) {
   const maxN = Math.max(1, ...j.rows.flatMap((r) => r.cells.map((c) => c.n || 0)));
+  const maxRow = Math.max(1, ...j.rows.map((r) => r.total));
   // 底色四档：<5 不填、5-20 浅、20-80 中、>80 深
   const bg = (n) => {
     if (!n) return 'transparent';
@@ -157,7 +178,7 @@ function renderMatrix(j) {
     <div><b>${j.meta.rateCells}</b><span>下浮率样本≥5 的格</span></div>`;
 
   let h = `<section><h2>城市 × 行业<em>点格子看该组合的中标单位</em></h2>
-    <div style="overflow-x:auto"><table style="min-width:820px"><thead><tr>
+    <div style="overflow-x:auto"><table class="mx" style="min-width:820px"><thead><tr>
       <th style="width:88px">城市</th>
       ${j.cols.map((c) => `<th class="r" style="width:72px">${esc(c)}</th>`).join('')}
       <th class="r" style="width:64px;border-left:1px solid var(--line)">合计</th>
@@ -176,7 +197,7 @@ function renderMatrix(j) {
         ${clickable ? `onclick="pickCell('${esc(r.city)}','${esc(c.t)}')"` : 'title="样本不足 5 条，不下结论"'}>
         ${c.n}${rateTxt}</td>`;
     }
-    h += `<td class="r k" style="border-left:1px solid var(--line);font-weight:600">${r.total}</td></tr>`;
+    h += `<td class="r k sum" style="--p:${Math.round(r.total / maxRow * 100)}%;border-left:1px solid var(--line);font-weight:600">${r.total}</td></tr>`;
   }
   h += `</tbody></table></div>
     <div style="padding:9px 14px;font-size:11.5px;color:var(--ink-3);border-top:1px solid var(--line-2)">
@@ -456,6 +477,23 @@ $('fReset').onclick = () => {
   $('fCity').value = ''; $('fType').value = ''; $('fSince').value = ''; $('fUntil').value = ''; $('fN').value = '5';
   refresh();
 };
+
+// fN 的 chips：只是代理层 —— 写 value 后 dispatchEvent，复用现有 onchange，
+// 所以 fillFacets / fReset / refresh 一行不用改，也不会重蹈「重建 innerHTML 丢选中项」的坑。
+const CHIP_OPTS = [['1', '全部'], ['3', '≥3 次'], ['5', '≥5 次'], ['10', '≥10 次']];
+function renderChips() {
+  const v = $('fN').value;
+  $('chipN').innerHTML = CHIP_OPTS.map(([k, label]) =>
+    `<button class="chip${k === v ? ' on' : ''}" data-v="${k}">${label}</button>`).join('');
+}
+$('chipN').onclick = (e) => {
+  const b = e.target.closest('button[data-v]');
+  if (!b) return;
+  $('fN').value = b.dataset.v;
+  $('fN').dispatchEvent(new Event('change'));
+  renderChips();
+};
+renderChips();
 
 // 默认进矩阵（tabs 里 grid 是第一个且带 on）
 loadGrid();

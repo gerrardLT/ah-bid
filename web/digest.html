@@ -49,7 +49,8 @@ main{max-width:1180px;margin:0 auto;padding:16px 20px 90px}
 .kpi{display:flex;flex-wrap:wrap;border:1px solid var(--line);background:var(--panel);margin-bottom:12px}
 .kpi div{flex:1 1 130px;padding:10px 15px;border-right:1px solid var(--line-2)}
 .kpi div:last-child{border-right:0}
-.kpi b{display:block;font:600 22px/1.2 var(--m)}
+.kpi b{display:block;font:600 22px/1.2 var(--m);font-variant-numeric:tabular-nums}
+.kpi b .pct{font:11.5px var(--m);color:var(--ink-3);font-style:normal;font-weight:400;margin-left:5px}
 .kpi span{display:block;font-size:11px;color:var(--ink-3);margin-top:2px}
 .kpi .b b{color:var(--bad)}
 .kpi .w b{color:var(--warn)}
@@ -285,15 +286,20 @@ function paint() {
 
   // KPI 用后端 counts，不随筛选变 —— 否则一筛 KPI 就跟着跳，两个数互相打架
   const c = d.counts || {};
+  const urg = d.urgent || [];
+  const n = d.items.length;
+  // 占比而不是变化率：Mobbin 实测的 Base44/Searchable 用 +2999% 那种 delta，
+  // 但实测 days=2 窗口的相对噪声 37.8%（±30 vs 基数 87），delta 埋在噪音里。
+  // 占比的分母是同一窗口，把 attach 批次噪声约掉，且不需要历史。
+  const pctOf = (x) => (n ? ((x / n) * 100).toFixed(1) + '%' : '—');
   $('kpi').innerHTML = `
     <div><b>${d.total}</b><span>${esc(d.date)} 新增</span></div>
-    <div class="b"><b>${c.due3 ?? 0}</b><span>3 天内截止</span></div>
-    <div class="w"><b>${c.due7 ?? 0}</b><span>7 天内截止</span></div>
-    <div><b>${c.withAttach ?? 0}</b><span>有已下载附件</span></div>
-    <div class="m"><b>${c.noDeadline ?? 0}</b><span>截止时间未知</span></div>`;
+    <div class="b"><b>${urg.length}</b><span>3 天内截止 · 全库</span></div>
+    <div class="w"><b>${c.due7 ?? 0}</b><span>7 天内 · 其中 ${c.due3 ?? 0} 已进 3 天档</span></div>
+    <div><b>${c.withAttach ?? 0}<i class="pct">${pctOf(c.withAttach ?? 0)}</i></b><span>有已下载附件</span></div>
+    <div class="m"><b>${c.noDeadline ?? 0}<i class="pct">${pctOf(c.noDeadline ?? 0)}</i></b><span>截止时间未知</span></div>`;
 
   // 紧急区：来自后端独立查询（全库 3 天内、confidence=high），不受当前窗口与筛选影响
-  const urg = d.urgent || [];
   if (urg.length) {
     $('urgent').innerHTML = `<section class="urgent">
       <h2>⏰ 3 天内截止<em>全库 · 独立于上方时间窗</em></h2>

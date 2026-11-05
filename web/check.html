@@ -107,6 +107,10 @@ th{text-align:left;padding:6px 10px;background:#F5F3EE;border-bottom:1px solid v
 td{padding:5px 10px;border-bottom:1px solid var(--line-2);vertical-align:top}
 td.k{white-space:nowrap;color:var(--ink-3);font:11.5px var(--m)}
 .st{font:11.5px var(--m);white-space:nowrap}
+/* 状态圆点：Mobbin 实测的 Remote 用「● Active」而非纯文字，一眼能区分三态 */
+.st::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin-right:5px;vertical-align:1px}
+/* delta 是数字（+5 / -2），不该带圆点 */
+.st.bare::before{display:none}
 .st.ok{color:var(--ok)}
 .st.warn{color:var(--warn)}
 .st.bad{color:var(--bad)}
@@ -510,7 +514,7 @@ async function showDiff(a, b) {
 
   const A = j.a.summary || {}, B = j.b.summary || {};
   const d = (k) => Number(B[k] ?? 0) - Number(A[k] ?? 0);
-  const delta = (n) => n > 0 ? `<span class="st ok">+${n}</span>` : n < 0 ? `<span class="st bad">${n}</span>` : '<span class="st">±0</span>';
+  const delta = (n) => n > 0 ? `<span class="st bare ok">+${n}</span>` : n < 0 ? `<span class="st bare bad">${n}</span>` : '<span class="st">±0</span>';
 
   let h = '<div class="kpi">'
     + `<div><b>${B.covered ?? '-'}</b><span>覆盖 ${delta(d('covered'))}</span></div>`

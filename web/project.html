@@ -58,7 +58,11 @@ section>h2{font-size:13px;font-weight:600;margin:0;padding:10px 14px;border-bott
 section>h2 em{font:11.5px var(--m);color:var(--ink-3);font-style:normal;font-weight:400;margin-left:auto}
 .body{padding:12px 14px}
 table{width:100%;border-collapse:collapse;font-size:12.5px}
-th{text-align:left;padding:6px 10px;background:#F5F3EE;border-bottom:1px solid var(--line);font-weight:600;color:var(--ink-2);white-space:nowrap}
+th{text-align:left;padding:6px 10px;background:#F5F3EE;border-bottom:1px solid var(--line);font-weight:600;color:var(--ink-2);white-space:nowrap;
+   position:sticky;top:52px;z-index:5;box-shadow:inset 0 -1px 0 var(--line)}
+/* top:52px 是 header 的高度。写成 0 会让表头滑到 header 底下（header z-index:10 > th 5）。
+   border-collapse:collapse 下 sticky 的 border-bottom 会滚走，所以用 inset box-shadow 补线。 */
+td{font-variant-numeric:tabular-nums}
 td{padding:6px 10px;border-bottom:1px solid var(--line-2);vertical-align:top}
 td.k{white-space:nowrap;font:11.5px var(--m);color:var(--ink-3)}
 tr:last-child td{border-bottom:0}
