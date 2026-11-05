@@ -290,12 +290,13 @@ function paint() {
   const n = d.items.length;
   // 占比而不是变化率：Mobbin 实测的 Base44/Searchable 用 +2999% 那种 delta，
   // 但实测 days=2 窗口的相对噪声 37.8%（±30 vs 基数 87），delta 埋在噪音里。
-  // 占比的分母是同一窗口，把 attach 批次噪声约掉，且不需要历史。
-  const pctOf = (x) => (n ? ((x / n) * 100).toFixed(1) + '%' : '—');
+  // 分母用 d.total（rows.length）而不是 items.length —— 后者在 MAX_ITEMS=3000 截断时
+  // 会比 counts 的基数小，占比可能 >100%。
+  const pctOf = (x) => (d.total ? ((x / d.total) * 100).toFixed(1) + '%' : '—');
   $('kpi').innerHTML = `
     <div><b>${d.total}</b><span>${esc(d.date)} 新增</span></div>
-    <div class="b"><b>${urg.length}</b><span>3 天内截止 · 全库</span></div>
-    <div class="w"><b>${c.due7 ?? 0}</b><span>7 天内 · 其中 ${c.due3 ?? 0} 已进 3 天档</span></div>
+    <div class="b"><b>${d.urgentTotal ?? urg.length}</b><span>3 天内截止 · 全库</span></div>
+    <div class="w"><b>${c.due7 ?? 0}</b><span>7 天内 · 其中 ${c.due3 ?? 0} 已进 3 天档（窗口内）</span></div>
     <div><b>${c.withAttach ?? 0}<i class="pct">${pctOf(c.withAttach ?? 0)}</i></b><span>有已下载附件</span></div>
     <div class="m"><b>${c.noDeadline ?? 0}<i class="pct">${pctOf(c.noDeadline ?? 0)}</i></b><span>截止时间未知</span></div>`;
 

@@ -95,6 +95,8 @@ type UrgentRow = {
   confidence: string;
 };
 let urgentRows: UrgentRow[] = [];
+/** 全库 3 天内截止的**总数**（urgentRows 被 LIMIT 50 截断，数组长度不能当总数） */
+let urgentTotal = 0;
 
 if (AS_JSON) {
   const ids = rows.map((r) => r.guid);
@@ -129,16 +131,19 @@ if (AS_JSON) {
   // 紧急区必须独立查全库：40 天前发布、明天截止的标，在「近 2 天」窗口里根本不存在。
   // 只取 confidence='high' —— 假警报比没警报更伤信任。
   const hi = todayOf(Date.now() + 3 * 864e5);
+  const urgentWhere = `FROM announcement a JOIN announcement_deadline d ON d.announcement_guid = a.guid
+       WHERE a.bulletin_nature = '1' AND d.confidence = 'high'
+         AND d.deadline_date BETWEEN ? AND ?`;
   urgentRows = db
     .prepare(
       `SELECT a.guid, a.title, a.city, a.primary_tag tag, a.origin_url url, a.pub_date pubDate,
-              d.deadline_date date, d.hhmm, d.confidence
-       FROM announcement a JOIN announcement_deadline d ON d.announcement_guid = a.guid
-       WHERE a.bulletin_nature = '1' AND d.confidence = 'high'
-         AND d.deadline_date BETWEEN ? AND ?
+              d.deadline_date date, d.hhmm, d.confidence ${urgentWhere}
        ORDER BY d.deadline_date ASC, d.hhmm ASC LIMIT 50`,
     )
     .all(today, hi) as unknown as UrgentRow[];
+  // 单独 COUNT：urgentRows 被 LIMIT 50 截断，数组长度不能当总数用
+  // （实测当前 49/50，再过两天就永远显示 50，而列表下方还写着「还有 N 条」）
+  urgentTotal = (db.prepare(`SELECT COUNT(*) AS c ${urgentWhere}`).get(today, hi) as { c: number }).c;
 }
 db.close();
 
@@ -256,6 +261,8 @@ if (AS_JSON) {
         total: rows.length,
         counts,
         urgent: urgentRows,
+        // 全库总数（urgent 数组被 LIMIT 50 截断，前端不能拿 length 当总数）
+        urgentTotal,
         items: truncated ? items.slice(0, MAX_ITEMS) : items,
         truncated,
         groups,

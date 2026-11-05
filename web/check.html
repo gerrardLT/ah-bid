@@ -514,7 +514,7 @@ async function showDiff(a, b) {
 
   const A = j.a.summary || {}, B = j.b.summary || {};
   const d = (k) => Number(B[k] ?? 0) - Number(A[k] ?? 0);
-  const delta = (n) => n > 0 ? `<span class="st bare ok">+${n}</span>` : n < 0 ? `<span class="st bare bad">${n}</span>` : '<span class="st">±0</span>';
+  const delta = (n) => n > 0 ? `<span class="st bare ok">+${n}</span>` : n < 0 ? `<span class="st bare bad">${n}</span>` : '<span class="st bare">±0</span>';
 
   let h = '<div class="kpi">'
     + `<div><b>${B.covered ?? '-'}</b><span>覆盖 ${delta(d('covered'))}</span></div>`

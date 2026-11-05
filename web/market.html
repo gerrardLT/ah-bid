@@ -51,7 +51,6 @@ td.k{font-family:var(--m);font-variant-numeric:tabular-nums;white-space:nowrap}
    3px padding + 小字 line-height 1.15 → 6 + 21.45 + 12.1 ≈ 39.6px，两种格等高。 */
 .mx th{height:40px;padding:0 10px}
 .mx td{height:40px;padding:3px 10px}
-.mx td.k div{line-height:1.15}
 /* L2 用到 .body 但之前没定义（直方图/趋势贴着 section 边框），沿用 project 的口径 */
 .body{padding:12px 14px}
 .btn-x{padding:6px 12px;border:1px solid var(--line);background:var(--panel);font:12.5px var(--f);cursor:pointer;color:var(--ink-2)}
@@ -143,6 +142,7 @@ async function loadGrid() {
   $('fCity').style.display = 'none';
   $('fType').style.display = 'none';
   $('fN').style.display = 'none';
+  $('chipN').style.display = 'none';   // chips 是 fN 的代理，fN 藏了它也得藏，否则点了会「假装筛选」
   $('out').innerHTML = '<div class="empty">载入中…</div>';
   let j;
   try {
@@ -190,7 +190,9 @@ function renderMatrix(j) {
     for (const c of r.cells) {
       if (!c.n) { h += '<td class="r muted">·</td>'; continue; }
       const rateTxt = c.rn >= 5 && c.med != null
-        ? `<div style="font:10.5px var(--m);color:var(--ink-3)">${(c.med * 100).toFixed(1)}%</div>`
+        // 行高必须写在内联的 font 简写里：内联声明(0,∞,0) 会盖掉样式表里
+        // 任何 line-height 规则，靠 default 行高只是碰巧落在 40px 边界上
+        ? `<div style="font:10.5px/1.15 var(--m);color:var(--ink-3)">${(c.med * 100).toFixed(1)}%</div>`
         : '';
       const clickable = c.n >= 5;
       h += `<td class="r k" style="background:${bg(c.n)};${clickable ? 'cursor:pointer' : 'opacity:.55'}"
@@ -351,7 +353,9 @@ function closeCompany() { $('dw').style.display = 'none'; }
 async function load() {
   $('fCity').style.display = '';
   $('fType').style.display = '';
-  $('fN').style.display = '';
+  // 注意：#fN 带 hidden 属性，UA 的 [hidden]{display:none} 优先级高于空内联声明，
+  // 所以这里不设它 —— 它是 chips 的状态源，永远不直接显示。
+  $('chipN').style.display = '';
   $('out').innerHTML = '<div class="empty">载入中…</div>';
   const q = new URLSearchParams({ x: S.x, limit: '2000' });
   if (S.city) q.set('city', S.city);
@@ -459,8 +463,9 @@ document.querySelectorAll('.tabs button').forEach((b) => {
     else load();
   };
 });
-// 矩阵 tab 下改日期/重置必须走 loadGrid，否则会请求 /api/market?x=grid 直接报错
-const refresh = () => (S.x === 'grid' ? loadGrid() : load());
+// 矩阵 tab 下改日期/重置必须走 loadGrid，否则会请求 /api/market?x=grid 直接报错。
+// renderChips() 放这里：任何改 fN 的路径（含「重置」）都会同步 chips 高亮。
+const refresh = () => { renderChips(); return S.x === 'grid' ? loadGrid() : load(); };
 $('fCity').onchange = () => {
   const v = $('fCity').value;
   S.cityOther = v === '__other' ? 1 : 0;
