@@ -154,7 +154,21 @@ def schema():
 
 ALLOWED = {t["name"]: t for g in schema() for t in g["tables"]}
 
-def query(table, page, size, q, sort, direction):
+def facets(table, col):
+    """某列的取值分布（给筛选下拉用）。只读，白名单列。"""
+    if table not in ALLOWED:
+        return {"error": "unknown table"}
+    if col not in [c["name"] for c in ALLOWED[table]["cols"]]:
+        return {"error": "unknown col"}
+    db = conn()
+    rows = db.execute(
+        f'SELECT "{col}" AS v, COUNT(*) AS n FROM "{table}" GROUP BY "{col}" ORDER BY n DESC LIMIT 60'
+    ).fetchall()
+    db.close()
+    return {"ok": True, "values": [{"v": r["v"], "n": r["n"]} for r in rows]}
+
+
+def query(table, page, size, q, sort, direction, filters=None):
     if table not in ALLOWED:
         return {"error": "unknown table"}
     meta = ALLOWED[table]
@@ -162,13 +176,30 @@ def query(table, page, size, q, sort, direction):
     textcols = [c["name"] for c in meta["cols"] if "TEXT" in c["type"] or not c["type"]]
     db = conn()
 
-    where, params = "", []
-    if q:
-        if textcols:
-            # 搜索所有文本列；CAST 让数字列也能被搜到
-            parts = [f'"{c}" LIKE ?' for c in textcols]
-            where = " WHERE (" + " OR ".join(parts) + ")"
-            params = [f"%{q}%"] * len(textcols)
+    # 条件筛选 + 全文搜索统一拼成 AND 条件。
+    # filters 的 key 支持 col / col__ge / col__le（范围），且只允许白名单列，防注入。
+    conds, params = [], []
+    if q and textcols:
+        conds.append("(" + " OR ".join(f'"{c}" LIKE ?' for c in textcols) + ")")
+        params += [f"%{q}%"] * len(textcols)
+    for k, v in (filters or {}).items():
+        if v in (None, ""):
+            continue
+        if k.endswith("__null"):
+            col = k[:-6]
+            if col in colnames:
+                conds.append(f'"{col}" IS NULL')
+            continue
+        if k.endswith("__ge"):
+            col, op = k[:-4], ">="
+        elif k.endswith("__le"):
+            col, op = k[:-4], "<="
+        else:
+            col, op = k, "="
+        if col in colnames:
+            conds.append(f'"{col}" {op} ?')
+            params.append(v)
+    where = (" WHERE " + " AND ".join(conds)) if conds else ""
 
     sortcol = sort if sort in colnames else (colnames[0] if colnames else None)
     dir_sql = "DESC" if str(direction).lower() == "desc" else "ASC"
@@ -1212,7 +1243,10 @@ class H(BaseHTTPRequestHandler):
                 t = one("t", "")
                 page = max(1, int(one("p", "1")))
                 size = min(500, max(10, int(one("s", "50"))))
-                return self._send(query(t, page, size, one("q", ""), one("sort"), one("dir", "asc")))
+                filters = {k[2:]: v[0] for k, v in qs.items() if k.startswith("f_") and v and v[0]}
+                return self._send(query(t, page, size, one("q", ""), one("sort"), one("dir", "asc"), filters))
+            if p == "/api/facets":
+                return self._send(facets(one("t", ""), one("col", "")))
             if p == "/api/related":
                 return self._send(related(one("t", ""), one("k", "")))
             if p in ("/", "/index.html"):

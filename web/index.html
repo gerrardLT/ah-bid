@@ -198,6 +198,15 @@ main{display:flex;flex-direction:column;overflow:hidden;min-height:0;background:
 .btn:hover{background:var(--thead);color:#fff;border-color:var(--thead)}
 
 /* ============ 第二行：分组 Tab ============ */
+.fbar{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  background:var(--panel);border-bottom:1px solid var(--line);
+  padding:8px 16px;
+}
+.fbar .sel{height:30px;font-size:12.5px}
+.fbar input[type=date]{width:140px}
+.fbar .fsep{color:var(--ink-3);font-size:12px}
+.fbar .fcount{margin-left:auto;font:11.5px var(--m);color:var(--ink-3)}
 .row-tabs{
   background:var(--panel);
   display:flex;align-items:stretch;gap:0;
@@ -367,6 +376,30 @@ mark{background:#FFD84D;color:#000;padding:0 1px;border-radius:2px;font-weight:6
   <!-- 分组 Tab（一级导航） -->
   <div class="row-tabs" id="tabs"></div>
 
+  <!-- 公告条件筛选条：仅 announcement 表显示 -->
+  <div class="fbar" id="fbar" hidden>
+    <select class="sel" id="fCity"><option value="">全部城市</option></select>
+    <select class="sel" id="fNature">
+      <option value="">全部性质</option>
+      <option value="1">招标公告</option>
+      <option value="2">中标结果</option>
+      <option value="3">变更澄清</option>
+    </select>
+    <select class="sel" id="fTag">
+      <option value="">全部行业</option>
+      <option value="building">房建</option>
+      <option value="power">电力</option>
+      <option value="pv">光伏</option>
+      <option value="storage">储能</option>
+      <option value="__none">其他/未分类</option>
+    </select>
+    <input class="sel" type="date" id="fSince" title="发布起">
+    <span class="fsep">至</span>
+    <input class="sel" type="date" id="fUntil" title="发布止">
+    <button class="btn" id="fClear">清除</button>
+    <span class="fcount" id="fCount"></span>
+  </div>
+
   <!-- 主体：侧栏（二级导航）+ 表格 -->
   <div class="body">
     <aside>
@@ -417,7 +450,7 @@ mark{background:#FFD84D;color:#000;padding:0 1px;border-radius:2px;font-weight:6
 const S = {
   schema: [], group: 0, table: null, cols: [], rows: [],
   page: 1, size: 50, pages: 1, total: 0,
-  q: '', sort: null, dir: 'asc',
+  q: '', sort: null, dir: 'asc', filters: {},
 };
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -510,6 +543,8 @@ function renderSide(){
 function pick(name){
   S.table = name; S.page = 1; S.q = ''; S.sort = null; S.dir = 'asc';
   $('q').value = '';
+  S.filters = {};
+  syncFilterBar();
   history.replaceState(null, '', `#g=${S.group}&t=${name}`);
   renderSide();
 
@@ -533,12 +568,14 @@ async function load(){
   u.searchParams.set('s', S.size);
   if (S.q) u.searchParams.set('q', S.q);
   if (S.sort) { u.searchParams.set('sort', S.sort); u.searchParams.set('dir', S.dir); }
+  for (const [k, v] of Object.entries(S.filters)) if (v) u.searchParams.set('f_' + k, v);
 
   try {
     const r = await fetch(u).then(r => r.json());
     if (r.error) throw new Error(r.error);
     S.rows = r.rows; S.total = r.total; S.pages = r.pages; S.cols = r.cols;
     renderHead(); renderBody(); renderPager();
+    if (S.table === 'announcement') $('fCount').textContent = `命中 ${fmt(r.total)} 条`;
     $('empty').style.display = r.rows.length ? 'none' : 'flex';
     $('emptyMsg').textContent = S.q ? `没有匹配「${S.q}」的行` : '这张表暂无数据';
 
@@ -781,6 +818,34 @@ $('q').oninput = e => {
 };
 $('size').onchange = e => { S.size = +e.target.value; S.page = 1; load(); };
 $('reload').onclick = () => load();
+
+/* ============ 公告条件筛选 ============ */
+function syncFilterBar(){
+  const on = S.table === 'announcement';
+  $('fbar').hidden = !on;
+  if (!on) return;
+  $('fCity').value = ''; $('fNature').value = ''; $('fTag').value = '';
+  $('fSince').value = ''; $('fUntil').value = '';
+  if ($('fCity').options.length <= 1) {
+    fetch('/api/facets?t=announcement&col=city').then(r => r.json()).then(j => {
+      if (j.ok) $('fCity').innerHTML = '<option value="">全部城市</option>' +
+        j.values.filter(x => x.v).map(x => `<option value="${esc(x.v)}">${esc(x.v)}（${fmt(x.n)}）</option>`).join('');
+    }).catch(() => {});
+  }
+}
+const setF = (k, v) => { S.filters[k] = v; S.page = 1; load(); };
+$('fCity').onchange = e => setF('city', e.target.value);
+$('fNature').onchange = e => setF('bulletin_nature', e.target.value);
+$('fTag').onchange = e => {
+  const v = e.target.value;
+  delete S.filters['primary_tag']; delete S.filters['primary_tag__null'];
+  if (v === '__none') S.filters['primary_tag__null'] = '1';
+  else if (v) S.filters['primary_tag'] = v;
+  S.page = 1; load();
+};
+$('fSince').onchange = e => setF('pub_date__ge', e.target.value);
+$('fUntil').onchange = e => setF('pub_date__le', e.target.value);
+$('fClear').onclick = () => { S.filters = {}; syncFilterBar(); S.page = 1; load(); };
 
 boot();
 </script>
