@@ -543,7 +543,8 @@ function renderSide(){
 function pick(name){
   S.table = name; S.page = 1; S.q = ''; S.sort = null; S.dir = 'asc';
   $('q').value = '';
-  S.filters = {};
+  // 公告默认只看「招标公告」；其余表无默认筛选
+  S.filters = name === 'announcement' ? { bulletin_nature: '1' } : {};
   syncFilterBar();
   history.replaceState(null, '', `#g=${S.group}&t=${name}`);
   renderSide();
@@ -810,6 +811,8 @@ async function loadRelated(row){
         if (gi >= 0) { S.group = gi; renderTabs(); }
         closeDw();
         S.table = t; S.page = 1; S.sort = null; S.dir = 'asc';
+        S.filters = {};           // 关联跳转按 guid 精确搜，清掉默认筛选以免挡住目标行
+        syncFilterBar();
         history.replaceState(null, '', `#g=${S.group}&t=${t}`);
         renderSide();
         $('q').value = key;
@@ -838,8 +841,12 @@ function syncFilterBar(){
   const on = S.table === 'announcement';
   $('fbar').hidden = !on;
   if (!on) return;
-  $('fCity').value = ''; $('fNature').value = ''; $('fTag').value = '';
-  $('fSince').value = ''; $('fUntil').value = '';
+  // 控件回显当前筛选状态（pick 会带默认 nature=1，清除时为空）
+  $('fCity').value = S.filters.city || '';
+  $('fNature').value = S.filters.bulletin_nature || '';
+  $('fTag').value = S.filters.primary_tag || (S.filters.primary_tag__null ? '__none' : '');
+  $('fSince').value = S.filters.pub_date__ge || '';
+  $('fUntil').value = S.filters.pub_date__le || '';
   if ($('fCity').options.length <= 1) {
     fetch('/api/facets?t=announcement&col=city').then(r => r.json()).then(j => {
       if (j.ok) $('fCity').innerHTML = '<option value="">全部城市</option>' +
