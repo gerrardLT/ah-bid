@@ -21,6 +21,7 @@ PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8420
 # 表分组（顺序即侧栏顺序）
 GROUPS = [
     ("公开数据", ["announcement", "attachment", "announcement_attachment"]),
+    ("正文抽取", ["announcement_deadline", "announcement_clause", "announcement_perf"]),
     ("招标解析", ["tender_doc", "scoring_item", "clarification_qa"]),
     ("价格数据", ["bid_result", "bid_body_result", "tender_control_price", "tender_price_raw"]),
     ("招投标画像", ["tender_buyer", "tender_duration"]),
@@ -32,6 +33,7 @@ GROUPS = [
 ]
 LABELS = {
     "announcement": "公告", "attachment": "附件", "announcement_attachment": "公告↔附件",
+    "announcement_deadline": "投标截止", "announcement_clause": "资格条件", "announcement_perf": "业绩门槛",
     "tender_doc": "招标文件解析", "scoring_item": "评分表", "clarification_qa": "澄清问答",
     "bid_result": "中标结果（附件）", "bid_body_result": "中标结果（正文）",
     "tender_control_price": "控制价", "tender_price_raw": "控制价原文",
