@@ -201,8 +201,15 @@ def query(table, page, size, q, sort, direction, filters=None):
             params.append(v)
     where = (" WHERE " + " AND ".join(conds)) if conds else ""
 
-    sortcol = sort if sort in colnames else (colnames[0] if colnames else None)
-    dir_sql = "DESC" if str(direction).lower() == "desc" else "ASC"
+    # 默认按时间倒序（招标信息最新在前）；用户显式指定排序时尊重用户。
+    if sort in colnames:
+        sortcol = sort
+        dir_sql = "DESC" if str(direction).lower() == "desc" else "ASC"
+    elif "pub_date" in colnames:
+        sortcol, dir_sql = "pub_date", "DESC"
+    else:
+        sortcol = colnames[0] if colnames else None
+        dir_sql = "ASC"
     order = f' ORDER BY "{sortcol}" {dir_sql}' if sortcol else ""
 
     total = db.execute(f'SELECT COUNT(*) FROM "{table}"{where}', params).fetchone()[0]
