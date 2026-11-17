@@ -36,3 +36,4 @@ __pycache__/
 data/notify.config.json
 
 data/my-bids.json
+web/_old/
