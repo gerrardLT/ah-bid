@@ -576,6 +576,7 @@ async function load(){
     const r = await fetch(u).then(r => r.json());
     if (r.error) throw new Error(r.error);
     S.rows = r.rows; S.total = r.total; S.pages = r.pages; S.cols = r.cols;
+    S.viewCols = S.table === 'announcement' ? coreCols(r.cols) : r.cols;
     renderHead(); renderBody(); renderPager();
     if (S.table === 'announcement') $('fCount').textContent = `命中 ${fmt(r.total)} 条`;
     $('empty').style.display = r.rows.length ? 'none' : 'flex';
@@ -595,8 +596,17 @@ async function load(){
 }
 
 /* ============ 渲染表头 ============ */
+/* ============ 公告核心列 ============ */
+// 招标信息列表只展示决策需要的列，隐藏 guid/正文/溯源等噪声。
+// guid 仍保留在 S.cols 里（行点击跳项目页要用），只是不显示。
+const ANN_CORE = ['title', 'city', 'pub_date', 'bulletin_nature', 'primary_tag', 'deadline_date', 'ctrl_wan', 'attach_n'];
+function coreCols(cols){
+  const m = new Map(cols.map(c => [c.name, c]));
+  return ANN_CORE.map(n => m.get(n)).filter(Boolean);
+}
+
 function renderHead(){
-  $('th').innerHTML = '<tr>' + S.cols.map(c => {
+  $('th').innerHTML = '<tr>' + (S.viewCols || S.cols).map(c => {
     const on = S.sort === c.name;
     return `<th><button data-c="${esc(c.name)}">
       <span class="h">${esc(c.label || c.name)}${on ? `<span class="ar">${S.dir === 'asc' ? '↑' : '↓'}</span>` : ''}</span>
@@ -616,7 +626,9 @@ function renderHead(){
 /* ============ 渲染表体 ============ */
 function renderBody(){
   const q = S.q;
-  $('tb').innerHTML = S.rows.map((row, ri) => '<tr>' + row.map((v, ci) => {
+  const vc = S.viewCols || S.cols;
+  $('tb').innerHTML = S.rows.map((row, ri) => '<tr>' + vc.map(c => {
+    const v = row[S.cols.findIndex(x => x.name === c.name)];
     if (v === null || v === undefined) return '<td class="nul">—</td>';
     if (typeof v === 'object' && v.trunc)
       return `<td class="txt" data-r="${ri}"><span class="clip">${hl(v.t, q)}</span><span class="more">+${v.trunc}</span></td>`;

@@ -217,6 +217,24 @@ def query(table, page, size, q, sort, direction, filters=None):
         f'SELECT * FROM "{table}"{where}{order} LIMIT ? OFFSET ?',
         params + [size, (page - 1) * size],
     ).fetchall()
+
+    # 公告表附加三个「决策列」：投标截止 / 限价(万) / 附件数。
+    # 这些不在 announcement 本表，靠 JOIN/子查询带出，让列表直接能判断"能不能投、多大、有无文件"。
+    extra = {}
+    if table == "announcement" and rows:
+        gs = [r["guid"] for r in rows]
+        ph = ",".join("?" * len(gs))
+        for r in db.execute(
+            f"""SELECT a.guid g, d.deadline_date dl,
+                   (SELECT MAX(amount) FROM tender_control_price t
+                     WHERE t.announcement_guid=a.guid AND t.price_kind='限价') ctrl,
+                   (SELECT COUNT(*) FROM announcement_attachment x
+                     WHERE x.announcement_guid=a.guid) an
+                FROM announcement a
+                LEFT JOIN announcement_deadline d ON d.announcement_guid=a.guid
+                WHERE a.guid IN ({ph})""", gs,
+        ):
+            extra[r["g"]] = (r["dl"], round(r["ctrl"] / 1e4, 1) if r["ctrl"] else None, r["an"])
     db.close()
 
     # 转成数组（保序、省字节）；超长文本截断并标记
@@ -236,11 +254,20 @@ def query(table, page, size, q, sort, direction, filters=None):
                 line.append({"b": len(v)})
             else:
                 line.append(v)
+        if table == "announcement":
+            line.extend(extra.get(r["guid"], (None, None, 0)))
         out.append(line)
+    cols = meta["cols"]
+    if table == "announcement":
+        cols = cols + [
+            {"name": "deadline_date", "label": "投标截止", "type": "TEXT", "type_cn": "日期"},
+            {"name": "ctrl_wan", "label": "限价(万)", "type": "REAL", "type_cn": "数值"},
+            {"name": "attach_n", "label": "附件", "type": "INTEGER", "type_cn": "数值"},
+        ]
     return {
         "table": table, "total": total, "page": page, "size": size,
         "pages": max(1, (total + size - 1) // size),
-        "cols": meta["cols"], "rows": out,
+        "cols": cols, "rows": out,
         "sort": sortcol, "dir": dir_sql.lower(),
     }
 
